@@ -448,7 +448,7 @@
         <p class="sub">Podrás cambiarlo después</p>
         <div class="campo">
           <label>Nombre del negocio</label>
-          <input type="text" id="ob-nombre" placeholder="Ej. Tacos Don Pepe">
+          <input type="text" id="ob-nombre" placeholder="Ej. Tacos Don Pepe" maxlength="80">
         </div>
         <button class="btn-grande" onclick="uiCrearNegocio()">Crear mi negocio</button>
         <div class="auth-msg" id="ob-msg"></div>
@@ -917,6 +917,11 @@ function aplicarTema(clave){
 /* ---------- utilidades ---------- */
 const $ = s => document.querySelector(s);
 const pesos = n => '$' + Number(n).toLocaleString('es-MX', {maximumFractionDigits: 2});
+/* escapa texto antes de insertarlo en HTML (nombres de producto/negocio son datos
+   de usuario: sin esto, alguien podría guardar "<img src=x onerror=...>" como
+   nombre y ejecutarlo cada vez que se muestre) */
+const ESC_MAP = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
 const hoyLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
 function verPantalla(id){
@@ -1094,7 +1099,7 @@ function techoHTML(){
     : `<div style="width:46px;height:46px;border-radius:50%;background:var(--oro);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:var(--madera);flex:0 0 46px;font-family:'Luckiest Guy'">${inicial}</div>`;
   return `<div class="techo">
     ${img}
-    <div><p class="marca fiesta">${ESTADO.negocio.nombre}</p></div>
+    <div><p class="marca fiesta">${esc(ESTADO.negocio.nombre)}</p></div>
   </div><div class="picado"></div>`;
 }
 
@@ -1137,24 +1142,24 @@ function categoriasDe(prods){
   return ['Todos', ...Array.from(set)];
 }
 
-function filtrarCategoria(cat){ ESTADO.filtroCategoria = cat; pintarRejilla(); }
+function filtrarCategoriaPorIndice(i){ ESTADO.filtroCategoria = categoriasDe(ESTADO.productos)[i]; pintarRejilla(); }
 
 function pintarRejilla(){
   const cats = categoriasDe(ESTADO.productos);
   const activa = ESTADO.filtroCategoria || 'Todos';
   const prods = activa==='Todos' ? ESTADO.productos : ESTADO.productos.filter(p => (p.categoria||'').trim()===activa);
-  const chips = cats.length>1 ? `<div class="cat-chips">${cats.map(c=>
-    `<button class="cat-chip ${c===activa?'on':''}" onclick="filtrarCategoria('${c.replace(/'/g,"\\'")}')">${c}</button>`
+  const chips = cats.length>1 ? `<div class="cat-chips">${cats.map((c,i)=>
+    `<button class="cat-chip ${c===activa?'on':''}" onclick="filtrarCategoriaPorIndice(${i})">${esc(c)}</button>`
   ).join('')}</div>` : '';
   const celdas = prods.map(p => {
     const cant = ESTADO.carro[p.id] || 0;
     const foto = p.foto_url
-      ? `<img src="${p.foto_url}" alt="">`
-      : `<div class="sin-foto">${p.nombre.charAt(0).toUpperCase()}</div>`;
+      ? `<img src="${esc(p.foto_url)}" alt="">`
+      : `<div class="sin-foto">${esc(p.nombre.charAt(0).toUpperCase())}</div>`;
     return `<button class="prod ${cant>0?'sel':''}" onclick="sumar('${p.id}')">
       ${cant>0?`<span class="badge">${cant}</span>`:''}
       <span class="aro">${foto}</span>
-      <span class="prod-n">${p.nombre}</span>
+      <span class="prod-n">${esc(p.nombre)}</span>
       <span class="prod-p">${pesos(p.precio)}</span>
       ${cant>0?`<span class="menos" onclick="event.stopPropagation();restar('${p.id}')">−</span>`:''}
     </button>`;
@@ -1200,7 +1205,7 @@ function pintarPago(){
   const total = totalCarro();
   const items = ESTADO.productos.filter(p=>ESTADO.carro[p.id]).map(p=>{
     const c = ESTADO.carro[p.id];
-    return `<div class="res-fila"><span>${c}× ${p.nombre}</span><span>${pesos(c*p.precio)}</span></div>`;
+    return `<div class="res-fila"><span>${c}× ${esc(p.nombre)}</span><span>${pesos(c*p.precio)}</span></div>`;
   }).join('');
   const rec = ESTADO.recibido;
   const falta = total - rec;
@@ -1319,11 +1324,11 @@ async function obtenerVentasDia(fecha){
 function irConfig(){
   const prods = ESTADO.productos.map((p,i)=>{
     const foto = p.foto_url
-      ? `<img class="mini" src="${p.foto_url}">`
-      : `<div class="mini" style="display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--oro);color:var(--madera)">${p.nombre.charAt(0).toUpperCase()}</div>`;
+      ? `<img class="mini" src="${esc(p.foto_url)}">`
+      : `<div class="mini" style="display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--oro);color:var(--madera)">${esc(p.nombre.charAt(0).toUpperCase())}</div>`;
     return `<div class="prod-fila">
       ${foto}
-      <div class="info"><div class="n">${p.nombre}</div><div class="p">${pesos(p.precio)}</div></div>
+      <div class="info"><div class="n">${esc(p.nombre)}</div><div class="p">${pesos(p.precio)}</div></div>
       <div class="acc">
         <button class="iconbtn" onclick="modalEditarProducto('${p.id}')">✏️</button>
         <button class="iconbtn del" onclick="borrarProductoUI('${p.id}')">🗑️</button>
@@ -1341,7 +1346,7 @@ function irConfig(){
       <div class="config-item">
         <div class="lbl">Nombre del negocio</div>
         <div style="display:flex;gap:8px">
-          <input type="text" id="cfg-nombre" value="${ESTADO.negocio.nombre.replace(/"/g,'&quot;')}"
+          <input type="text" id="cfg-nombre" maxlength="80" value="${esc(ESTADO.negocio.nombre)}"
             style="flex:1;padding:11px;border:2px solid #CBD5E1;border-radius:10px;font-size:15px;background:var(--crema-cl)">
           <button class="iconbtn" style="width:auto;padding:0 14px" onclick="guardarNombre()">Guardar</button>
         </div>
@@ -1351,7 +1356,7 @@ function irConfig(){
         <div class="lbl">Logo del negocio</div>
         <div style="display:flex;align-items:center;gap:12px">
           ${ESTADO.negocio.logo_url
-            ? `<img class="fotoprev" style="margin:0" src="${ESTADO.negocio.logo_url}">`
+            ? `<img class="fotoprev" style="margin:0" src="${esc(ESTADO.negocio.logo_url)}">`
             : `<div class="fotoprev" style="margin:0;display:flex;align-items:center;justify-content:center;font-size:30px">🏪</div>`}
           <div style="flex:1">
             <button class="iconbtn" style="width:auto;padding:9px 14px" onclick="$('#file-logo').click()">Subir logo</button>
@@ -1407,9 +1412,12 @@ async function guardarNombre(){
 }
 
 /* ---------- subir logo (a Supabase Storage) ---------- */
+const TAMANO_MAX_IMG = 15 * 1024 * 1024; // 15MB: evita que una imagen enorme trabe el navegador
+
 async function subirLogo(input){
   const file = input.files[0];
   if(!file) return;
+  if(file.size > TAMANO_MAX_IMG){ input.value=''; return alert('La imagen es demasiado grande (máximo 15MB).'); }
   mostrarCarga('Subiendo logo…');
   try{
     const img = await procesarImagenCircular(file, 300);
@@ -1423,7 +1431,7 @@ async function subirLogo(input){
     irConfig();
   }catch(e){
     ocultarCarga();
-    alert('No se pudo subir el logo. '+(e.message||''));
+    alert('No se pudo subir el logo. Revisa tu conexión e inténtalo otra vez.');
   }
 }
 
@@ -1438,10 +1446,10 @@ function modalNuevoProducto(){
   _fotoTemp = null;
   abrirModal(`
     <h3 class="fiesta">Nuevo producto</h3>
-    <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" placeholder="Ej. Elote sencillo"></div>
+    <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" placeholder="Ej. Elote sencillo" maxlength="80"></div>
     <div class="campo"><label>Precio</label><input type="number" id="np-precio" placeholder="0" min="0" step="0.5"></div>
-    <div class="campo"><label>Categoría (opcional)</label><input type="text" id="np-categoria" placeholder="Ej. Bebidas" list="lista-categorias"></div>
-    <datalist id="lista-categorias">${categoriasDe(ESTADO.productos).filter(c=>c!=='Todos').map(c=>`<option value="${c.replace(/"/g,'&quot;')}">`).join('')}</datalist>
+    <div class="campo"><label>Categoría (opcional)</label><input type="text" id="np-categoria" placeholder="Ej. Bebidas" list="lista-categorias" maxlength="40"></div>
+    <datalist id="lista-categorias">${categoriasDe(ESTADO.productos).filter(c=>c!=='Todos').map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
     <div class="campo"><label>Foto (opcional)</label>
       <button class="iconbtn" style="width:auto;padding:9px 14px" onclick="$('#np-file').click()">Elegir foto</button>
       <input type="file" id="np-file" accept="image/*" style="display:none" onchange="previewFoto(this)">
@@ -1458,14 +1466,14 @@ function modalEditarProducto(id){
   _fotoTemp = null;
   abrirModal(`
     <h3 class="fiesta">Editar producto</h3>
-    <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" value="${p.nombre.replace(/"/g,'&quot;')}"></div>
+    <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" maxlength="80" value="${esc(p.nombre)}"></div>
     <div class="campo"><label>Precio</label><input type="number" id="np-precio" value="${p.precio}" min="0" step="0.5"></div>
-    <div class="campo"><label>Categoría (opcional)</label><input type="text" id="np-categoria" value="${(p.categoria||'').replace(/"/g,'&quot;')}" placeholder="Ej. Bebidas" list="lista-categorias"></div>
-    <datalist id="lista-categorias">${categoriasDe(ESTADO.productos).filter(c=>c!=='Todos').map(c=>`<option value="${c.replace(/"/g,'&quot;')}">`).join('')}</datalist>
+    <div class="campo"><label>Categoría (opcional)</label><input type="text" id="np-categoria" maxlength="40" value="${esc(p.categoria||'')}" placeholder="Ej. Bebidas" list="lista-categorias"></div>
+    <datalist id="lista-categorias">${categoriasDe(ESTADO.productos).filter(c=>c!=='Todos').map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
     <div class="campo"><label>Foto</label>
       <button class="iconbtn" style="width:auto;padding:9px 14px" onclick="$('#np-file').click()">Cambiar foto</button>
       <input type="file" id="np-file" accept="image/*" style="display:none" onchange="previewFoto(this)">
-      <img id="np-prev" class="fotoprev" src="${p.foto_url||''}" style="${p.foto_url?'':'display:none'}">
+      <img id="np-prev" class="fotoprev" src="${esc(p.foto_url||'')}" style="${p.foto_url?'':'display:none'}">
     </div>
     <div class="fila-btn">
       <button class="btn-grande" style="background:var(--humo);box-shadow:0 4px 0 #5a4e3d" onclick="cerrarModal()">Cancelar</button>
@@ -1476,6 +1484,7 @@ function modalEditarProducto(id){
 async function previewFoto(input){
   const file = input.files[0];
   if(!file) return;
+  if(file.size > TAMANO_MAX_IMG){ input.value=''; return alert('La imagen es demasiado grande (máximo 15MB).'); }
   _fotoTemp = await procesarImagenCircular(file, 400);
   const url = URL.createObjectURL(_fotoTemp);
   const prev = $('#np-prev');
