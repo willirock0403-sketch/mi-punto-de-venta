@@ -349,6 +349,15 @@
 /* Config */
 .config-item{background:var(--crema-cl);border:2px solid var(--tinta);border-radius:14px;padding:13px 15px;margin-bottom:11px}
 .config-item .lbl{font-size:12px;font-weight:800;color:var(--humo);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+.tema-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.tema-opt{position:relative;display:flex;align-items:center;gap:9px;padding:10px 12px;border:2px solid #E2E8F0;
+  border-radius:12px;background:#fff;text-align:left}
+.tema-opt.on{border-color:var(--tinta);box-shadow:0 0 0 2px rgba(0,0,0,.06)}
+.tema-swatches{display:flex;flex:0 0 auto}
+.tema-swatches span{width:16px;height:16px;border-radius:50%;border:2px solid #fff;margin-left:-6px}
+.tema-swatches span:first-child{margin-left:0}
+.tema-n{font-size:13px;font-weight:700;flex:1}
+.tema-check{color:var(--verde);font-weight:900;font-size:15px}
 .prod-fila{display:flex;align-items:center;gap:11px;background:var(--crema-cl);border:2px solid var(--tinta);
   border-radius:14px;padding:10px 12px;margin-bottom:9px}
 .prod-fila .mini{width:46px;height:46px;border-radius:50%;object-fit:cover;border:2.5px solid var(--oro);flex:0 0 46px;background:#eee}
@@ -891,6 +900,20 @@ let ESTADO = {
   ultimaVenta: null,
 };
 
+/* ---------- temas de color ---------- */
+const TEMAS = {
+  oceano:   { nombre:'Océano',        verde:'#0D9488','verde-osc':'#115E59', rojo:'#DC2626','rojo-osc':'#991B1B', oro:'#D97706', crema:'#F1F5F9','crema-cl':'#FFFFFF', tinta:'#1E293B', madera:'#0F172A', humo:'#64748B' },
+  azul:     { nombre:'Ejecutivo Azul', verde:'#2B4C7E','verde-osc':'#1B3A5C', rojo:'#101826','rojo-osc':'#0A0F1A', oro:'#4A6FA5', crema:'#F5F6F8','crema-cl':'#FFFFFF', tinta:'#1A202C', madera:'#101826', humo:'#6B7280' },
+  grafito:  { nombre:'Grafito',        verde:'#3F3F46','verde-osc':'#27272A', rojo:'#18181B','rojo-osc':'#000000', oro:'#6B6B70', crema:'#FAFAFA','crema-cl':'#FFFFFF', tinta:'#18181B', madera:'#18181B', humo:'#71717A' },
+  bosque:   { nombre:'Verde Bosque',   verde:'#1F5C48','verde-osc':'#143C30', rojo:'#0E2A22','rojo-osc':'#081C17', oro:'#3F7A63', crema:'#F2F6F4','crema-cl':'#FFFFFF', tinta:'#16211D', madera:'#0E2A22', humo:'#5F6F68' },
+  borgona:  { nombre:'Borgoña',        verde:'#6B2737','verde-osc':'#451822', rojo:'#2A1015','rojo-osc':'#170A0C', oro:'#8A4550', crema:'#F6F0F1','crema-cl':'#FFFFFF', tinta:'#241A1B', madera:'#2A1015', humo:'#7A6367' },
+};
+function aplicarTema(clave){
+  const t = TEMAS[clave] || TEMAS.oceano;
+  const raiz = document.documentElement.style;
+  Object.entries(t).forEach(([k,v])=>{ if(k!=='nombre') raiz.setProperty('--'+k, v); });
+}
+
 /* ---------- utilidades ---------- */
 const $ = s => document.querySelector(s);
 const pesos = n => '$' + Number(n).toLocaleString('es-MX', {maximumFractionDigits: 2});
@@ -1021,6 +1044,7 @@ async function arrancar(){
       return;
     }
     ESTADO.negocio = negocios[0];
+    aplicarTema(ESTADO.negocio.color);
     if(ESTADO.negocio.activo === false){
       ocultarCarga();
       verPantalla('p-suspendido');
@@ -1337,6 +1361,24 @@ function irConfig(){
       </div>
 
       <div class="config-item">
+        <div class="lbl">Tema de color</div>
+        <div class="tema-grid">
+          ${Object.entries(TEMAS).map(([clave,t])=>{
+            const activo = (ESTADO.negocio.color||'oceano')===clave;
+            return `<button class="tema-opt ${activo?'on':''}" onclick="elegirTema('${clave}')">
+              <span class="tema-swatches">
+                <span style="background:${t.madera}"></span>
+                <span style="background:${t.rojo}"></span>
+                <span style="background:${t.verde}"></span>
+              </span>
+              <span class="tema-n">${t.nombre}</span>
+              ${activo?'<span class="tema-check">✓</span>':''}
+            </button>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <div class="config-item">
         <div class="lbl" style="display:flex;justify-content:space-between;align-items:center">
           <span>Productos (${ESTADO.productos.length})</span>
           <button class="iconbtn" style="width:auto;padding:6px 12px;background:var(--verde);color:#fff;border-color:var(--verde-osc)" onclick="modalNuevoProducto()">+ Nuevo</button>
@@ -1344,6 +1386,14 @@ function irConfig(){
         <div style="margin-top:10px">${prods || '<p style="color:var(--humo);font-size:14px">Aún no hay productos.</p>'}</div>
       </div>
     </div>`;
+}
+
+async function elegirTema(clave){
+  if((ESTADO.negocio.color||'oceano')===clave) return;
+  aplicarTema(clave);
+  ESTADO.negocio.color = clave;
+  irConfig();
+  await sb.from('negocios').update({color:clave}).eq('id', ESTADO.negocio.id);
 }
 
 async function guardarNombre(){
