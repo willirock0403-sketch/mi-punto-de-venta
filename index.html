@@ -1414,10 +1414,25 @@ async function guardarNombre(){
 /* ---------- subir logo (a Supabase Storage) ---------- */
 const TAMANO_MAX_IMG = 15 * 1024 * 1024; // 15MB: evita que una imagen enorme trabe el navegador
 
+/* valida tipo y tamaño ANTES de intentar decodificar el archivo.
+   El backend (bucket de Supabase) también rechaza esto por su cuenta;
+   esta validación es solo para dar feedback rápido en el navegador. */
+function archivoEsImagenValida(file){
+  if(!file.type || !file.type.startsWith('image/')){
+    alert('Elige un archivo de imagen (JPG, PNG, etc.).');
+    return false;
+  }
+  if(file.size > TAMANO_MAX_IMG){
+    alert('La imagen es demasiado grande (máximo 15MB).');
+    return false;
+  }
+  return true;
+}
+
 async function subirLogo(input){
   const file = input.files[0];
   if(!file) return;
-  if(file.size > TAMANO_MAX_IMG){ input.value=''; return alert('La imagen es demasiado grande (máximo 15MB).'); }
+  if(!archivoEsImagenValida(file)){ input.value=''; return; }
   mostrarCarga('Subiendo logo…');
   try{
     const img = await procesarImagenCircular(file, 300);
@@ -1484,8 +1499,13 @@ function modalEditarProducto(id){
 async function previewFoto(input){
   const file = input.files[0];
   if(!file) return;
-  if(file.size > TAMANO_MAX_IMG){ input.value=''; return alert('La imagen es demasiado grande (máximo 15MB).'); }
-  _fotoTemp = await procesarImagenCircular(file, 400);
+  if(!archivoEsImagenValida(file)){ input.value=''; return; }
+  try{
+    _fotoTemp = await procesarImagenCircular(file, 400);
+  }catch(e){
+    input.value = '';
+    return alert('No se pudo leer esa imagen. Prueba con otro archivo.');
+  }
   const url = URL.createObjectURL(_fotoTemp);
   const prev = $('#np-prev');
   prev.src = url; prev.style.display = 'block';

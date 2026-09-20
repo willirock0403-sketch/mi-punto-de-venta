@@ -168,11 +168,11 @@ create index if not exists idx_ventas_negocio_creado
 -- ============================================================
 
 do $$ begin
-  alter table public.negocios add constraint negocios_nombre_longitud check (char_length(nombre) <= 120);
+  alter table public.negocios add constraint negocios_nombre_longitud check (char_length(trim(nombre)) between 1 and 120);
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  alter table public.productos add constraint productos_nombre_longitud check (char_length(nombre) <= 120);
+  alter table public.productos add constraint productos_nombre_longitud check (char_length(trim(nombre)) between 1 and 120);
 exception when duplicate_object then null; end $$;
 
 do $$ begin
@@ -186,3 +186,13 @@ exception when duplicate_object then null; end $$;
 do $$ begin
   alter table public.ventas add constraint ventas_total_no_negativo check (total >= 0);
 exception when duplicate_object then null; end $$;
+
+-- ============================================================
+-- ARCHIVOS SUBIDOS (logos y fotos de producto) — la app ya valida tipo
+-- y tamaño en el navegador, pero eso se puede saltar llamando la API
+-- directo. Esto lo hace cumplir el propio Storage de Supabase.
+-- ============================================================
+update storage.buckets
+  set file_size_limit = 15728640, -- 15MB, igual que el límite del navegador
+      allowed_mime_types = array['image/jpeg','image/png','image/webp','image/gif']
+  where id in ('logos','productos');
