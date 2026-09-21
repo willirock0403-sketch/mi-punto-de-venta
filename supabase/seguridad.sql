@@ -12,8 +12,16 @@
 -- Sin estas reglas, cualquier persona que use la app (con la llave
 -- pública que ya está en el código) podría, en teoría, leer o
 -- modificar productos/ventas de OTRO negocio con el ID correcto.
--- Row Level Security obliga a Postgres a filtrar SIEMPRE por el
--- dueño autenticado, sin importar lo que pida el navegador.
+-- Row Level Security obliga a Postgres a filtrar SIEMPRE por quién
+-- está autenticado, sin importar lo que pida el navegador.
+--
+-- MODELO DE ACCESO (cambió: antes era "solo el dueño"):
+--   Cada persona que entra a la app pertenece a UN negocio, con un rol:
+--     · admin    → el dueño y quien él decida. Puede todo.
+--     · empleado → solo puede cobrar. No ve reportes, no toca productos,
+--                  no entra a ajustes, no puede anular ventas.
+--   El dueño original (negocios.dueno) siempre es admin, aunque no tenga
+--   fila en "empleados" — así ningún negocio existente pierde su acceso.
 -- ============================================================
 
 -- 1) Columnas nuevas usadas por la app (no rompen nada si ya existen)
@@ -52,9 +60,8 @@ create table if not exists public.cortes_caja (
   creado_en timestamptz not null default now()
 );
 
--- Empleados: solo sirven para anotar quién atendió una venta en el historial.
--- No tienen su propio inicio de sesión ni permisos — el dueño sigue siendo
--- el único que entra a la app con su correo y contraseña.
+-- Empleados: ahora son CUENTAS del negocio, no solo un nombre para el
+-- historial. Cada uno entra con su propio correo y contraseña.
 create table if not exists public.empleados (
   id uuid primary key default gen_random_uuid(),
   negocio_id uuid not null references public.negocios(id) on delete cascade,
@@ -63,18 +70,80 @@ create table if not exists public.empleados (
   creado_en timestamptz not null default now()
 );
 
+-- columnas del modelo de cuentas (los empleados viejos, que solo tenían
+-- nombre, se quedan sin cuenta ligada hasta que el admin les ponga correo)
+alter table public.empleados add column if not exists usuario_id uuid references auth.users(id) on delete set null;
+alter table public.empleados add column if not exists email text;
+alter table public.empleados add column if not exists rol text not null default 'empleado';
+
+do $$ begin
+  alter table public.empleados add constraint empleados_rol_valido check (rol in ('admin','empleado'));
+exception when duplicate_object then null; end $$;
+
+-- un correo no puede estar dos veces en el mismo negocio...
+create unique index if not exists ux_empleados_negocio_email
+  on public.empleados(negocio_id, lower(email)) where email is not null;
+-- ...y una cuenta pertenece a un solo negocio
+create unique index if not exists ux_empleados_usuario
+  on public.empleados(usuario_id) where usuario_id is not null;
+
 -- 2) Activar RLS en las tablas del negocio
-alter table public.negocios  enable row level security;
-alter table public.productos enable row level security;
-alter table public.ventas    enable row level security;
-alter table public.empleados enable row level security;
-alter table public.folios    enable row level security;
+alter table public.negocios    enable row level security;
+alter table public.productos   enable row level security;
+alter table public.ventas      enable row level security;
+alter table public.empleados   enable row level security;
+alter table public.folios      enable row level security;
 alter table public.cortes_caja enable row level security;
 
--- 3) NEGOCIOS: cada quien solo ve y edita el suyo
+-- ============================================================
+-- 3) QUIÉN ES QUIÉN — las dos funciones en las que se apoya todo
+--
+-- Son SECURITY DEFINER a propósito, y es la parte más delicada del
+-- archivo: si la política de "negocios" preguntara por "empleados" y la
+-- de "empleados" preguntara por "negocios", Postgres entraría en
+-- recursión infinita y TODO dejaría de funcionar. Al correr como dueñas
+-- de la tabla, estas funciones no disparan las políticas y cortan ese
+-- ciclo. Son seguras porque solo reciben el id de un negocio y contestan
+-- sí/no sobre QUIEN ESTÁ PIDIENDO (auth.uid()): no pueden devolver datos
+-- de nadie más ni ser usadas para espiar otro negocio.
+-- ============================================================
+create or replace function public.es_miembro(p_negocio uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.negocios n
+    where n.id = p_negocio and n.dueno = auth.uid()
+  ) or exists (
+    select 1 from public.empleados e
+    where e.negocio_id = p_negocio and e.usuario_id = auth.uid() and e.activo
+  );
+$$;
+
+create or replace function public.es_admin(p_negocio uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.negocios n
+    where n.id = p_negocio and n.dueno = auth.uid()
+  ) or exists (
+    select 1 from public.empleados e
+    where e.negocio_id = p_negocio and e.usuario_id = auth.uid()
+      and e.activo and e.rol = 'admin'
+  );
+$$;
+
+-- 4) NEGOCIOS: lo ven todos sus miembros; solo un admin lo edita
 drop policy if exists "negocios_select_propio" on public.negocios;
 create policy "negocios_select_propio" on public.negocios
-  for select using (dueno = auth.uid());
+  for select using (public.es_miembro(id));
 
 drop policy if exists "negocios_insert_propio" on public.negocios;
 create policy "negocios_insert_propio" on public.negocios
@@ -82,144 +151,111 @@ create policy "negocios_insert_propio" on public.negocios
 
 drop policy if exists "negocios_update_propio" on public.negocios;
 create policy "negocios_update_propio" on public.negocios
-  for update using (dueno = auth.uid()) with check (dueno = auth.uid());
+  for update using (public.es_admin(id)) with check (public.es_admin(id));
 
--- 4) PRODUCTOS: solo del negocio del usuario autenticado
+-- 5) PRODUCTOS: el empleado los ve para poder cobrar, pero no los toca
 drop policy if exists "productos_select_propio" on public.productos;
 create policy "productos_select_propio" on public.productos
-  for select using (
-    exists (select 1 from public.negocios n where n.id = productos.negocio_id and n.dueno = auth.uid())
-  );
+  for select using (public.es_miembro(negocio_id));
 
 drop policy if exists "productos_insert_propio" on public.productos;
 create policy "productos_insert_propio" on public.productos
-  for insert with check (
-    exists (select 1 from public.negocios n where n.id = productos.negocio_id and n.dueno = auth.uid())
-  );
+  for insert with check (public.es_admin(negocio_id));
 
 drop policy if exists "productos_update_propio" on public.productos;
 create policy "productos_update_propio" on public.productos
-  for update using (
-    exists (select 1 from public.negocios n where n.id = productos.negocio_id and n.dueno = auth.uid())
-  ) with check (
-    exists (select 1 from public.negocios n where n.id = productos.negocio_id and n.dueno = auth.uid())
-  );
+  for update using (public.es_admin(negocio_id)) with check (public.es_admin(negocio_id));
 
 drop policy if exists "productos_delete_propio" on public.productos;
 create policy "productos_delete_propio" on public.productos
-  for delete using (
-    exists (select 1 from public.negocios n where n.id = productos.negocio_id and n.dueno = auth.uid())
-  );
+  for delete using (public.es_admin(negocio_id));
 
--- 4.1) EMPLEADOS: solo del negocio del usuario autenticado (mismo patrón que productos)
+-- 6) EMPLEADOS: los administra el admin. Cada quien puede ver y reclamar
+--    la invitación hecha a SU correo (así se liga su cuenta al registrarse).
 drop policy if exists "empleados_select_propio" on public.empleados;
 create policy "empleados_select_propio" on public.empleados
   for select using (
-    exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
+    public.es_miembro(negocio_id)
+    or lower(email) = lower(auth.jwt() ->> 'email')
   );
 
 drop policy if exists "empleados_insert_propio" on public.empleados;
 create policy "empleados_insert_propio" on public.empleados
-  for insert with check (
-    exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
-  );
+  for insert with check (public.es_admin(negocio_id));
 
 drop policy if exists "empleados_update_propio" on public.empleados;
 create policy "empleados_update_propio" on public.empleados
+  for update using (public.es_admin(negocio_id)) with check (public.es_admin(negocio_id));
+
+-- Reclamar la invitación: solo sobre la fila que lleva MI correo y que
+-- todavía no tiene cuenta ligada, y solo para ligarla a MÍ. No permite
+-- cambiarse de negocio ni ascenderse solo: el rol ya venía puesto por el
+-- admin y el "with check" obliga a que la fila siga siendo la misma.
+drop policy if exists "empleados_reclamar_invitacion" on public.empleados;
+create policy "empleados_reclamar_invitacion" on public.empleados
   for update using (
-    exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
+    usuario_id is null
+    and email is not null
+    and lower(email) = lower(auth.jwt() ->> 'email')
   ) with check (
-    exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
+    usuario_id = auth.uid()
+    and lower(email) = lower(auth.jwt() ->> 'email')
   );
 
 drop policy if exists "empleados_delete_propio" on public.empleados;
 create policy "empleados_delete_propio" on public.empleados
-  for delete using (
-    exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
-  );
+  for delete using (public.es_admin(negocio_id));
 
--- 4.2) FOLIOS: mismo patrón. La función siguiente_folio() de abajo corre con
--- los permisos de quien la llama, así que estas políticas son las que impiden
--- que alguien toque el contador de otro negocio.
+-- 7) FOLIOS: el empleado necesita folio para poder cobrar
 drop policy if exists "folios_select_propio" on public.folios;
 create policy "folios_select_propio" on public.folios
-  for select using (
-    exists (select 1 from public.negocios n where n.id = folios.negocio_id and n.dueno = auth.uid())
-  );
+  for select using (public.es_miembro(negocio_id));
 
 drop policy if exists "folios_insert_propio" on public.folios;
 create policy "folios_insert_propio" on public.folios
-  for insert with check (
-    exists (select 1 from public.negocios n where n.id = folios.negocio_id and n.dueno = auth.uid())
-  );
+  for insert with check (public.es_miembro(negocio_id));
 
 drop policy if exists "folios_update_propio" on public.folios;
 create policy "folios_update_propio" on public.folios
-  for update using (
-    exists (select 1 from public.negocios n where n.id = folios.negocio_id and n.dueno = auth.uid())
-  ) with check (
-    exists (select 1 from public.negocios n where n.id = folios.negocio_id and n.dueno = auth.uid())
-  );
+  for update using (public.es_miembro(negocio_id)) with check (public.es_miembro(negocio_id));
 
--- 4.3) CORTES DE CAJA: mismo patrón que el resto
+-- 8) CORTES DE CAJA: es dinero, solo el admin
 drop policy if exists "cortes_select_propio" on public.cortes_caja;
 create policy "cortes_select_propio" on public.cortes_caja
-  for select using (
-    exists (select 1 from public.negocios n where n.id = cortes_caja.negocio_id and n.dueno = auth.uid())
-  );
+  for select using (public.es_admin(negocio_id));
 
 drop policy if exists "cortes_insert_propio" on public.cortes_caja;
 create policy "cortes_insert_propio" on public.cortes_caja
-  for insert with check (
-    exists (select 1 from public.negocios n where n.id = cortes_caja.negocio_id and n.dueno = auth.uid())
-  );
+  for insert with check (public.es_admin(negocio_id));
 
 drop policy if exists "cortes_update_propio" on public.cortes_caja;
 create policy "cortes_update_propio" on public.cortes_caja
-  for update using (
-    exists (select 1 from public.negocios n where n.id = cortes_caja.negocio_id and n.dueno = auth.uid())
-  ) with check (
-    exists (select 1 from public.negocios n where n.id = cortes_caja.negocio_id and n.dueno = auth.uid())
-  );
+  for update using (public.es_admin(negocio_id)) with check (public.es_admin(negocio_id));
 
 drop policy if exists "cortes_delete_propio" on public.cortes_caja;
 create policy "cortes_delete_propio" on public.cortes_caja
-  for delete using (
-    exists (select 1 from public.negocios n where n.id = cortes_caja.negocio_id and n.dueno = auth.uid())
-  );
+  for delete using (public.es_admin(negocio_id));
 
--- 5) VENTAS: solo del negocio del usuario autenticado
+-- 9) VENTAS: el empleado puede registrar ventas (es su trabajo) y ver las
+--    del negocio, pero ANULAR es de admin: es la forma de borrar dinero
+--    del corte, así que no puede quedar en manos de quien cobra.
 drop policy if exists "ventas_select_propio" on public.ventas;
 create policy "ventas_select_propio" on public.ventas
-  for select using (
-    exists (select 1 from public.negocios n where n.id = ventas.negocio_id and n.dueno = auth.uid())
-  );
+  for select using (public.es_miembro(negocio_id));
 
 drop policy if exists "ventas_insert_propio" on public.ventas;
 create policy "ventas_insert_propio" on public.ventas
-  for insert with check (
-    exists (select 1 from public.negocios n where n.id = ventas.negocio_id and n.dueno = auth.uid())
-  );
+  for insert with check (public.es_miembro(negocio_id));
 
--- Se permite ANULAR una venta ya registrada (marcarla, nunca borrarla ni
--- editar sus montos) para poder corregir un cobro equivocado sin perder
--- el registro contable. La app solo manda {anulada, anulada_en} al anular,
--- pero esta política no impide técnicamente cambiar otros campos si alguien
--- llamara la API directo con su propia llave — sigue protegida entre
--- negocios (RLS), solo ya no es "solo insertar" dentro del propio negocio.
 drop policy if exists "ventas_update_propio" on public.ventas;
 create policy "ventas_update_propio" on public.ventas
-  for update using (
-    exists (select 1 from public.negocios n where n.id = ventas.negocio_id and n.dueno = auth.uid())
-  ) with check (
-    exists (select 1 from public.negocios n where n.id = ventas.negocio_id and n.dueno = auth.uid())
-  );
+  for update using (public.es_admin(negocio_id)) with check (public.es_admin(negocio_id));
 
--- 6) STORAGE: fotos de logo y de producto
---    Se guardan como "<negocio_id>/archivo.jpg", así que solo el
---    dueño de ESE negocio puede subir/reemplazar/borrar ahí, pero
---    cualquiera puede VER la imagen (son públicas: se muestran en
---    tickets y en la pantalla de venta sin iniciar sesión).
+-- 10) STORAGE: fotos de logo y de producto
+--    Se guardan como "<negocio_id>/archivo.jpg", así que solo un admin de
+--    ESE negocio puede subir/reemplazar, pero cualquiera puede VER la
+--    imagen (son públicas: se muestran en tickets y en la pantalla de
+--    venta sin iniciar sesión).
 drop policy if exists "logos_lectura_publica" on storage.objects;
 create policy "logos_lectura_publica" on storage.objects
   for select using (bucket_id = 'logos');
@@ -230,7 +266,7 @@ create policy "logos_escritura_propia" on storage.objects
     bucket_id = 'logos'
     and exists (
       select 1 from public.negocios n
-      where n.id::text = (storage.foldername(name))[1] and n.dueno = auth.uid()
+      where n.id::text = (storage.foldername(name))[1] and public.es_admin(n.id)
     )
   );
 
@@ -240,7 +276,7 @@ create policy "logos_actualiza_propia" on storage.objects
     bucket_id = 'logos'
     and exists (
       select 1 from public.negocios n
-      where n.id::text = (storage.foldername(name))[1] and n.dueno = auth.uid()
+      where n.id::text = (storage.foldername(name))[1] and public.es_admin(n.id)
     )
   );
 
@@ -254,7 +290,7 @@ create policy "productos_fotos_escritura_propia" on storage.objects
     bucket_id = 'productos'
     and exists (
       select 1 from public.negocios n
-      where n.id::text = (storage.foldername(name))[1] and n.dueno = auth.uid()
+      where n.id::text = (storage.foldername(name))[1] and public.es_admin(n.id)
     )
   );
 
@@ -264,7 +300,7 @@ create policy "productos_fotos_actualiza_propia" on storage.objects
     bucket_id = 'productos'
     and exists (
       select 1 from public.negocios n
-      where n.id::text = (storage.foldername(name))[1] and n.dueno = auth.uid()
+      where n.id::text = (storage.foldername(name))[1] and public.es_admin(n.id)
     )
   );
 
@@ -281,9 +317,9 @@ create policy "productos_fotos_actualiza_propia" on storage.objects
 -- y evitan que se pongan lentas según crecen tus datos.
 -- ============================================================
 
--- un usuario nunca debería tener dos negocios (así arranca la app: toma el
--- primero que encuentra) — esto lo impide también a nivel de base de datos,
--- no solo en la pantalla de "crear negocio", y de paso sirve como índice.
+-- un usuario nunca debería ser dueño de dos negocios (así arranca la app:
+-- toma el primero que encuentra) — esto lo impide también a nivel de base
+-- de datos, no solo en la pantalla de "crear negocio".
 create unique index if not exists ux_negocios_dueno on public.negocios(dueno);
 
 -- pantalla de venta: productos de un negocio, solo los activos, en su orden
@@ -347,17 +383,25 @@ exception when duplicate_object then null; end $$;
 -- atómica para no perder cambios si dos cobros llegan casi al mismo tiempo;
 -- un update normal desde el navegador (leer, restar, guardar) tiene ese
 -- riesgo. Esta función lo hace en un solo paso dentro de la base de datos.
--- No es SECURITY DEFINER: corre con los permisos de quien la llama, así que
--- sigue protegida por las políticas de RLS de "productos" de arriba — si el
--- producto no es del negocio del usuario autenticado, no actualiza nada.
+--
+-- Va como SECURITY DEFINER porque editar productos ya es cosa de admin, y
+-- un empleado cobrando SÍ tiene que poder bajar el inventario. Por eso
+-- lleva su propio candado adentro: es_miembro() sobre el negocio dueño del
+-- producto. Sin esa línea, cualquiera podría descontar stock ajeno.
 -- ============================================================
 create or replace function public.descontar_stock(p_producto_id uuid, p_cantidad integer)
 returns void
-language sql
+language plpgsql
+security definer
+set search_path = public
 as $$
-  update public.productos
-  set stock = greatest(stock - p_cantidad, 0)
-  where id = p_producto_id and stock is not null;
+begin
+  update public.productos p
+  set stock = greatest(p.stock - p_cantidad, 0)
+  where p.id = p_producto_id
+    and p.stock is not null
+    and public.es_miembro(p.negocio_id);
+end;
 $$;
 
 -- ============================================================
@@ -365,8 +409,8 @@ $$;
 -- por la base de datos en un solo paso. Es lo que evita que dos celulares
 -- cobrando al mismo tiempo generen el mismo folio (antes se contaban las
 -- ventas del día desde el navegador, que sí se puede duplicar).
--- Tampoco es SECURITY DEFINER: las políticas de RLS de "folios" son las
--- que impiden tocar el contador de otro negocio.
+-- No es SECURITY DEFINER: las políticas de RLS de "folios" son las que
+-- impiden tocar el contador de otro negocio.
 -- ============================================================
 create or replace function public.siguiente_folio(p_negocio_id uuid, p_fecha date)
 returns integer
