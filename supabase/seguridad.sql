@@ -141,3 +141,58 @@ create policy "productos_fotos_actualiza_propia" on storage.objects
 --   update public.negocios set activo = true  where id = 'ID-DEL-NEGOCIO';
 -- El id de cada negocio lo ves en Table Editor → negocios.
 -- ============================================================
+
+
+-- ============================================================
+-- ÍNDICES — aceleran las consultas que la app hace todo el tiempo
+-- y evitan que se pongan lentas según crecen tus datos.
+-- ============================================================
+
+-- un usuario nunca debería tener dos negocios (así arranca la app: toma el
+-- primero que encuentra) — esto lo impide también a nivel de base de datos,
+-- no solo en la pantalla de "crear negocio", y de paso sirve como índice.
+create unique index if not exists ux_negocios_dueno on public.negocios(dueno);
+
+-- pantalla de venta: productos de un negocio, solo los activos, en su orden
+create index if not exists idx_productos_negocio_activo_orden
+  on public.productos(negocio_id, activo, orden);
+
+-- historial y cortes: ventas de un negocio, por rango de fecha
+create index if not exists idx_ventas_negocio_creado
+  on public.ventas(negocio_id, creado_en);
+
+-- ============================================================
+-- LÍMITES DE INTEGRIDAD — el navegador ya limita esto, pero alguien
+-- podría saltarse la app y llamar la API directamente con la llave
+-- pública; estas reglas protegen la base de datos pase lo que pase.
+-- ============================================================
+
+do $$ begin
+  alter table public.negocios add constraint negocios_nombre_longitud check (char_length(trim(nombre)) between 1 and 120);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.productos add constraint productos_nombre_longitud check (char_length(trim(nombre)) between 1 and 120);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.productos add constraint productos_categoria_longitud check (categoria is null or char_length(categoria) <= 60);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.productos add constraint productos_precio_no_negativo check (precio >= 0);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.ventas add constraint ventas_total_no_negativo check (total >= 0);
+exception when duplicate_object then null; end $$;
+
+-- ============================================================
+-- ARCHIVOS SUBIDOS (logos y fotos de producto) — la app ya valida tipo
+-- y tamaño en el navegador, pero eso se puede saltar llamando la API
+-- directo. Esto lo hace cumplir el propio Storage de Supabase.
+-- ============================================================
+update storage.buckets
+  set file_size_limit = 15728640, -- 15MB, igual que el límite del navegador
+      allowed_mime_types = array['image/jpeg','image/png','image/webp','image/gif']
+  where id in ('logos','productos');
