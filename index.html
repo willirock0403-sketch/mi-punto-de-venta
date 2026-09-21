@@ -37,8 +37,11 @@
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-  .pos{
+  html,body{
     font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  body{margin:0}
+  .pos{
     background:var(--crema); color:var(--tinta);
     max-width:520px; margin:0 auto; min-height:100vh;
     font-variant-numeric:tabular-nums; position:relative; overflow-x:hidden;
@@ -224,6 +227,41 @@
   .auth-msg.err{display:block;background:rgba(220,38,38,.1);color:var(--rojo)}
   .auth-msg.ok{display:block;background:rgba(13,148,136,.1);color:var(--verde)}
 
+  /* ---------- splash de entrada ---------- */
+  .splash{position:fixed;inset:0;z-index:10000;background:var(--madera);overflow:hidden;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    opacity:1;transition:opacity .4s ease}
+  .splash.oculto{opacity:0;pointer-events:none}
+  .splash-glow{position:absolute;width:70vw;height:70vw;max-width:520px;max-height:520px;border-radius:50%;
+    background:radial-gradient(circle, color-mix(in srgb, var(--verde) 55%, transparent) 0%, transparent 68%);
+    filter:blur(10px); animation:splash-respira 3.2s ease-in-out infinite}
+  .splash-icon{width:76px;height:76px;border-radius:22px;overflow:hidden;position:relative;z-index:1;
+    box-shadow:0 20px 60px rgba(0,0,0,.45);
+    opacity:0;animation:splash-icono .62s cubic-bezier(.22,1,.36,1) .05s forwards}
+  .splash-icon img{width:100%;height:100%;display:block;object-fit:cover}
+  .splash-marca{position:relative;overflow:hidden;z-index:1;
+    opacity:0;animation:splash-sube .55s cubic-bezier(.22,1,.36,1) .38s forwards}
+  .splash-marca h1{margin:0;font-size:30px;font-weight:700;color:#fff;letter-spacing:-.02em}
+  .splash-brillo{position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.6) 50%,transparent 58%);
+    transform:translateX(-130%);animation:splash-barrido .9s ease-out .78s 1}
+  .splash-linea{width:44px;height:2px;border-radius:2px;background:var(--verde);z-index:1;
+    transform:scaleX(0);animation:splash-linea .45s cubic-bezier(.22,1,.36,1) .92s forwards}
+  .splash-firma{margin:0;font-size:12.5px;font-weight:500;letter-spacing:.03em;color:rgba(255,255,255,.4);z-index:1;
+    opacity:0;animation:splash-sube .5s cubic-bezier(.22,1,.36,1) 1.08s forwards}
+
+  @keyframes splash-icono{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+  @keyframes splash-sube{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes splash-linea{to{transform:scaleX(1)}}
+  @keyframes splash-barrido{from{transform:translateX(-130%)}to{transform:translateX(230%)}}
+  @keyframes splash-respira{0%,100%{opacity:.4;transform:scale(1)}50%{opacity:.65;transform:scale(1.06)}}
+
+  @media (prefers-reduced-motion: reduce){
+    .splash-glow,.splash-brillo{display:none}
+    .splash-icon,.splash-marca,.splash-linea,.splash-firma{animation:splash-fade .3s ease forwards}
+    @keyframes splash-fade{from{opacity:0}to{opacity:1;transform:none}}
+  }
+
   .cargando{position:fixed;inset:0;background:var(--madera);display:flex;flex-direction:column;
     align-items:center;justify-content:center;z-index:9999;gap:16px}
   .cargando .sp{width:32px;height:32px;border:3px solid rgba(255,255,255,.18);border-top-color:#fff;
@@ -288,6 +326,20 @@
 </style>
 </head>
 <body>
+
+<!-- ===== SPLASH DE ENTRADA ===== -->
+<div class="splash" id="splash">
+  <div class="splash-glow"></div>
+  <div class="splash-icon">
+    <img src="icons/icon-192.png" alt="">
+  </div>
+  <div class="splash-marca">
+    <h1>VentaFácil</h1>
+    <div class="splash-brillo"></div>
+  </div>
+  <div class="splash-linea"></div>
+  <p class="splash-firma">by Williams Rdz</p>
+</div>
 
 <!-- ===== CARGANDO ===== -->
 <div class="cargando" id="cargando">
@@ -985,8 +1037,18 @@ function entrarApp(){
   irInicio();
 }
 
-/* arranque al cargar la página */
-window.addEventListener('load', arrancar);
+/* arranque al cargar la página, con el splash de entrada */
+function esperar(ms){ return new Promise(res => setTimeout(res, ms)); }
+async function arrancarConSplash(){
+  const reducido = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const minimo = esperar(reducido ? 300 : 1900);
+  await Promise.all([arrancar(), minimo]);
+  const splash = $('#splash');
+  if(!splash) return;
+  splash.classList.add('oculto');
+  setTimeout(() => splash.remove(), 450);
+}
+window.addEventListener('load', arrancarConSplash);
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
