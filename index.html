@@ -88,6 +88,13 @@
     background:var(--oro);color:#fff;transition:transform .1s var(--resorte)}
   .chip-sync:active{transform:scale(.94)}
   .chip-sync.off{background:rgba(255,255,255,.14);color:rgba(255,255,255,.75)}
+
+  /* ---------- corte de caja ---------- */
+  .cc-dif{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:12px;padding:13px;
+    border-radius:14px;font-size:17px;font-weight:700;letter-spacing:-.01em}
+  .cc-dif.ok{background:color-mix(in srgb, var(--verde) 14%, transparent);color:var(--verde)}
+  .cc-dif.mal{background:rgba(220,38,38,.12);color:var(--rojo)}
+  .cc-dif.sobra{background:color-mix(in srgb, var(--oro) 16%, transparent);color:var(--oro)}
   .picado{display:none}
   @media (prefers-reduced-transparency: reduce){
     .techo{background:var(--madera);backdrop-filter:none}
@@ -995,6 +1002,7 @@ const ICONOS = {
   pausa:    '<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>',
   chispas:  '<path d="M12 3.3l1.3 3.8L17 8.4l-3.7 1.3L12 13.6l-1.3-3.9L7 8.4l3.7-1.3L12 3.3z"/><path d="M19 14.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"/><path d="M5.2 14.8l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/>',
   ayuda:    '<circle cx="12" cy="12" r="9"/><path d="M9.3 9.2a2.7 2.7 0 1 1 4 2.4c-.7.4-1.3 1-1.3 1.8v.3"/><circle cx="12" cy="16.3" r=".9" fill="currentColor" stroke="none"/>',
+  caja:     '<path d="M3.2 8.6h17.6v10.2a1 1 0 0 1-1 1H4.2a1 1 0 0 1-1-1V8.6z"/><path d="M4.6 8.6l1.7-3.5a1 1 0 0 1 .9-.6h9.6a1 1 0 0 1 .9.6l1.7 3.5"/><path d="M9.6 12.6h4.8"/>',
 };
 function icono(nombre, tam=18){
   return `<svg class="ic" width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[nombre]||''}</svg>`;
@@ -1400,6 +1408,9 @@ async function irInicio(){
       </div>
       <button class="mega verde" onclick="irVenta()">
         <span class="mega-ic">${icono('carrito')}</span> Nueva venta
+      </button>
+      <button class="mega crema" onclick="irCorteCaja()">
+        <span class="mega-ic">${icono('caja')}</span> Corte de caja
       </button>
       <button class="mega crema" onclick="irHistorial()">
         <span class="mega-ic">${icono('grafica')}</span> Historial y cortes
@@ -2199,6 +2210,172 @@ function procesarImagenCircular(file, tam){
 /* ============================================================
    HISTORIAL
    ============================================================ */
+/* ============================================================
+   CORTE DE CAJA (arqueo de efectivo)
+
+   Al cerrar el día: cuánto efectivo DEBERÍA haber en la caja
+   (fondo inicial + ventas cobradas en efectivo) contra cuánto hay
+   realmente. La diferencia es lo que delata faltantes.
+   ============================================================ */
+async function obtenerCorte(fecha){
+  try{
+    const { data, error } = await sb.from('cortes_caja')
+      .select('*').eq('negocio_id', ESTADO.negocio.id).eq('fecha', fecha).limit(1);
+    if(error) throw error;
+    return (data && data[0]) || null;
+  }catch(e){ console.error(e); return null; }
+}
+
+async function irCorteCaja(){
+  mostrarCarga('Calculando…');
+  const fecha = hoyLocal();
+  const ventas = await obtenerVentasDia(fecha);
+  const corte = await obtenerCorte(fecha);
+  ocultarCarga();
+
+  const porMetodo = {};
+  METODOS_PAGO.forEach(m => porMetodo[m.id] = 0);
+  ventas.forEach(v => {
+    const m = v.metodo_pago || 'efectivo';
+    porMetodo[m] = (porMetodo[m] || 0) + Number(v.total);
+  });
+  const efectivo = porMetodo.efectivo || 0;
+  const nEfectivo = ventas.filter(v => (v.metodo_pago||'efectivo') === 'efectivo').length;
+
+  // se recuerdan en el navegador para no volver a teclearlos si se vuelve a entrar
+  const fondoPrevio = corte ? corte.fondo_inicial : '';
+  const contadoPrevio = corte ? corte.contado : '';
+
+  const otros = METODOS_PAGO.filter(m => m.id !== 'efectivo' && porMetodo[m.id] > 0)
+    .map(m => `<div class="res-fila"><span>${m.n}</span><span>${pesos(porMetodo[m.id])}</span></div>`).join('');
+
+  $('#pos-root').innerHTML = techoHTML() + `
+    <div class="cuerpo">
+      <div class="topbar">
+        <button class="volver" onclick="irInicio()">${icono('chevron',16)} Inicio</button>
+        <span class="topbar-tit fiesta">CORTE DE CAJA</span>
+      </div>
+
+      ${corte ? `<div class="config-item" style="border-left:3px solid var(--verde)">
+        <div class="lbl" style="margin-bottom:4px">Ya cerraste caja hoy</div>
+        <p style="margin:0;font-size:13.5px;color:var(--humo)">
+          Guardado a las ${new Date(corte.creado_en).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}.
+          Si vuelves a guardar, se reemplaza.
+        </p>
+      </div>` : ''}
+
+      <div class="config-item">
+        <div class="lbl">Ventas de hoy</div>
+        <div class="resumen" style="margin:0">
+          <div class="res-fila"><span>Efectivo · ${nEfectivo} ${nEfectivo===1?'venta':'ventas'}</span><span class="fiesta">${pesos(efectivo)}</span></div>
+          ${otros}
+          <div class="res-total"><span>TOTAL DEL DÍA</span><span class="fiesta">${pesos(ventas.reduce((s,v)=>s+Number(v.total),0))}</span></div>
+        </div>
+        <p style="margin:10px 0 0;font-size:12.5px;color:var(--humo)">
+          Solo el efectivo debe estar físicamente en la caja. Tarjeta y transferencia llegan a tu cuenta.
+        </p>
+      </div>
+
+      <div class="config-item">
+        <div class="campo">
+          <label>Fondo inicial (con cuánto abriste)</label>
+          <input type="number" id="cc-fondo" inputmode="decimal" min="0" step="1" placeholder="0" value="${fondoPrevio}" oninput="recalcularCorte()">
+        </div>
+        <div class="campo" style="margin-bottom:0">
+          <label>Efectivo contado (lo que hay ahora)</label>
+          <input type="number" id="cc-contado" inputmode="decimal" min="0" step="1" placeholder="0" value="${contadoPrevio}" oninput="recalcularCorte()">
+        </div>
+      </div>
+
+      <div class="config-item" id="cc-resultado" data-efectivo="${efectivo}"></div>
+
+      <div class="config-item">
+        <div class="campo" style="margin-bottom:0">
+          <label>Notas (opcional)</label>
+          <input type="text" id="cc-notas" maxlength="200" placeholder="Ej. se pagó el gas con caja" value="${corte ? esc(corte.notas||'') : ''}">
+        </div>
+      </div>
+
+      <button class="mega verde" onclick="guardarCorteCaja(this)">
+        <span class="mega-ic">${icono('check',18)}</span> Guardar corte
+      </button>
+    </div>`;
+
+  recalcularCorte();
+}
+
+/* se recalcula en vivo mientras teclean, sin repintar la pantalla para que
+   no se pierda el foco del campo */
+function recalcularCorte(){
+  const cont = $('#cc-resultado');
+  if(!cont) return;
+  const efectivo = Number(cont.dataset.efectivo) || 0;
+  const fondo = parseFloat($('#cc-fondo').value) || 0;
+  const contado = parseFloat($('#cc-contado').value) || 0;
+  const esperado = fondo + efectivo;
+  const dif = contado - esperado;
+  const hayConteo = $('#cc-contado').value.trim() !== '';
+
+  let veredicto;
+  if(!hayConteo){
+    veredicto = `<p style="margin:10px 0 0;font-size:13.5px;color:var(--humo)">Cuenta el efectivo y escríbelo arriba para ver si cuadra.</p>`;
+  } else if(Math.abs(dif) < 0.005){
+    veredicto = `<div class="cc-dif ok">${icono('checkCirc',18)} Cuadra exacto</div>`;
+  } else if(dif < 0){
+    veredicto = `<div class="cc-dif mal">Faltan ${pesos(Math.abs(dif))}</div>`;
+  } else {
+    veredicto = `<div class="cc-dif sobra">Sobran ${pesos(dif)}</div>`;
+  }
+
+  cont.innerHTML = `
+    <div class="lbl">Resultado</div>
+    <div class="resumen" style="margin:0">
+      <div class="res-fila"><span>Fondo inicial</span><span>${pesos(fondo)}</span></div>
+      <div class="res-fila"><span>+ Ventas en efectivo</span><span>${pesos(efectivo)}</span></div>
+      <div class="res-total"><span>DEBERÍA HABER</span><span class="fiesta">${pesos(esperado)}</span></div>
+    </div>
+    ${veredicto}`;
+}
+
+async function guardarCorteCaja(btn){
+  const fecha = hoyLocal();
+  const cont = $('#cc-resultado');
+  const efectivo = Number(cont.dataset.efectivo) || 0;
+  const fondo = parseFloat($('#cc-fondo').value) || 0;
+  const contado = parseFloat($('#cc-contado').value) || 0;
+  limpiarError('cc-contado');
+  if($('#cc-contado').value.trim() === ''){
+    return marcarError('cc-contado','Escribe cuánto efectivo contaste.');
+  }
+  const ventas = await obtenerVentasDia(fecha);
+  const registro = {
+    negocio_id: ESTADO.negocio.id,
+    fecha,
+    fondo_inicial: fondo,
+    ventas_efectivo: efectivo,
+    esperado: fondo + efectivo,
+    contado,
+    diferencia: contado - (fondo + efectivo),
+    num_ventas: ventas.length,
+    notas: $('#cc-notas').value.trim() || null,
+  };
+
+  const restaurar = botonCargando(btn, 'Guardando…');
+  try{
+    const previo = await obtenerCorte(fecha);
+    const { error } = previo
+      ? await sb.from('cortes_caja').update(registro).eq('id', previo.id)
+      : await sb.from('cortes_caja').insert([registro]);
+    if(error) throw error;
+    alert('Corte de caja guardado.');
+    irInicio();
+  }catch(e){
+    console.error(e);
+    restaurar();
+    alert('No se pudo guardar el corte. Necesitas conexión para guardarlo; el cálculo de arriba sí es correcto.');
+  }
+}
+
 async function irHistorial(){
   mostrarCarga('Cargando ventas…');
   const { data: ventas } = await sb.from('ventas')
