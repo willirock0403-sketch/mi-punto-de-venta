@@ -21,6 +21,7 @@ alter table public.negocios  add column if not exists activo   boolean not null 
 alter table public.productos add column if not exists categoria text;
 alter table public.ventas    add column if not exists anulada    boolean not null default false;
 alter table public.ventas    add column if not exists anulada_en timestamptz;
+alter table public.ventas    add column if not exists metodo_pago text not null default 'efectivo';
 
 -- 2) Activar RLS en las tablas del negocio
 alter table public.negocios  enable row level security;
@@ -197,6 +198,11 @@ exception when duplicate_object then null; end $$;
 
 do $$ begin
   alter table public.ventas add constraint ventas_total_no_negativo check (total >= 0);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.ventas add constraint ventas_metodo_pago_valido
+    check (metodo_pago in ('efectivo','tarjeta','transferencia'));
 exception when duplicate_object then null; end $$;
 
 -- ============================================================
