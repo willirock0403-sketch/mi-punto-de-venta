@@ -351,7 +351,7 @@
     <div class="auth-card">
       <div class="auth-top">
         <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.08);margin:0 auto;display:flex;align-items:center;justify-content:center;color:#fff">
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 10.3V19a1 1 0 0 0 1 1h3.5v-5.5h6V20H18.5a1 1 0 0 0 1-1v-8.7"/><path d="M3.3 10.3l1.3-5.1A1 1 0 0 1 5.6 4.4h12.8a1 1 0 0 1 1 .8l1.3 5.1"/><path d="M3.3 10.3a2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0"/></svg>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 10.3V19a1 1 0 0 0 1 1h3.5v-5.5h6V20H18.5a1 1 0 0 0 1-1v-8.7"/><path d="M3.3 10.3l1.3-5.1A1 1 0 0 1 5.6 4.4h12.8a1 1 0 0 1 1 .8l1.3 5.1"/><path d="M3.3 10.3a2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0"/></svg>
         </div>
         <h1 class="fiesta">VentaFácil</h1>
         <p>RÁPIDO · SENCILLO · EN LA NUBE</p>
@@ -399,7 +399,7 @@
     <div class="auth-card">
       <div class="auth-top">
         <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.08);margin:0 auto;display:flex;align-items:center;justify-content:center;color:#fff">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.3l1.3 3.8L17 8.4l-3.7 1.3L12 13.6l-1.3-3.9L7 8.4l3.7-1.3L12 3.3z"/><path d="M19 14.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"/><path d="M5.2 14.8l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/></svg>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.3l1.3 3.8L17 8.4l-3.7 1.3L12 13.6l-1.3-3.9L7 8.4l3.7-1.3L12 3.3z"/><path d="M19 14.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"/><path d="M5.2 14.8l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/></svg>
         </div>
         <h1 class="fiesta">¡Ya casi!</h1>
         <p>CONFIGURA TU NEGOCIO</p>
@@ -424,7 +424,7 @@
     <div class="auth-card">
       <div class="auth-top">
         <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.08);margin:0 auto;display:flex;align-items:center;justify-content:center;color:#fff">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/></svg>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/></svg>
         </div>
         <h1 class="fiesta">Cuenta en pausa</h1>
         <p>ACCESO SUSPENDIDO</p>
@@ -1483,8 +1483,8 @@ function irConfig(){
       ${foto}
       <div class="info"><div class="n">${esc(p.nombre)}</div><div class="p">${pesos(p.precio)}</div>${stockTxt}</div>
       <div class="acc">
-        <button class="iconbtn" onclick="modalEditarProducto('${p.id}')">${icono('lapiz',16)}</button>
-        <button class="iconbtn del" onclick="borrarProductoUI('${p.id}')">${icono('basura',16)}</button>
+        <button class="iconbtn" aria-label="Editar ${esc(p.nombre)}" onclick="modalEditarProducto('${p.id}')">${icono('lapiz',16)}</button>
+        <button class="iconbtn del" aria-label="Borrar ${esc(p.nombre)}" onclick="borrarProductoUI('${p.id}')">${icono('basura',16)}</button>
       </div>
     </div>`;
   }).join('');
@@ -1493,8 +1493,8 @@ function irConfig(){
       <div class="mini" style="display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--relleno-sutil-fuerte);color:var(--tinta)">${esc(e.nombre.charAt(0).toUpperCase())}</div>
       <div class="info"><div class="n">${esc(e.nombre)}</div></div>
       <div class="acc">
-        <button class="iconbtn" onclick="modalEditarEmpleado('${e.id}')">${icono('lapiz',16)}</button>
-        <button class="iconbtn del" onclick="borrarEmpleadoUI('${e.id}')">${icono('basura',16)}</button>
+        <button class="iconbtn" aria-label="Editar ${esc(e.nombre)}" onclick="modalEditarEmpleado('${e.id}')">${icono('lapiz',16)}</button>
+        <button class="iconbtn del" aria-label="Borrar ${esc(e.nombre)}" onclick="borrarEmpleadoUI('${e.id}')">${icono('basura',16)}</button>
       </div>
     </div>`).join('');
 
