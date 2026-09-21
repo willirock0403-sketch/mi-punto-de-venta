@@ -268,6 +268,11 @@
   @keyframes giro{to{transform:rotate(360deg)}}
   .cargando p{color:rgba(255,255,255,.6);font-size:13.5px;margin:0;font-weight:500}
 
+  /* ---------- estado de carga dentro de un botón (en vez de tapar toda la pantalla) ---------- */
+  .btn-cargando{display:inline-flex!important;align-items:center;justify-content:center;gap:8px;opacity:.85;pointer-events:none}
+  .btn-cargando .sp-chico{width:15px;height:15px;flex:0 0 15px;border:2px solid currentColor;border-top-color:transparent;
+    opacity:.55;border-radius:50%;animation:giro .6s linear infinite}
+
   /* ---------- ajustes ---------- */
   .config-item{background:var(--crema-cl);border-radius:18px;padding:15px 16px;margin-bottom:11px;box-shadow:var(--sombra-1)}
   .config-item .lbl{font-size:12px;font-weight:600;color:var(--humo);text-transform:uppercase;letter-spacing:.05em;margin-bottom:9px}
@@ -905,6 +910,21 @@ function verPantalla(id){
 function mostrarCarga(txt='Cargando…'){ $('#cargando p').textContent = txt; $('#cargando').style.display='flex'; }
 function ocultarCarga(){ $('#cargando').style.display='none'; }
 
+/* estado de carga dentro del propio botón que se presionó (en vez de tapar
+   toda la pantalla con el spinner grande) — para acciones cortas y comunes
+   donde el resto de la pantalla sigue siendo visible mientras se guarda.
+   Devuelve una función para restaurar el botón; si la acción tiene éxito y
+   vuelve a pintar la pantalla no hace falta llamarla, pero llamarla de
+   todos modos en un botón que ya no está en pantalla no hace nada. */
+function botonCargando(btn, texto){
+  if(!btn) return () => {};
+  const html = btn.innerHTML, disabled = btn.disabled;
+  btn.disabled = true;
+  btn.classList.add('btn-cargando');
+  btn.innerHTML = `<span class="sp-chico"></span>${esc(texto)}`;
+  return () => { btn.classList.remove('btn-cargando'); btn.innerHTML = html; btn.disabled = disabled; };
+}
+
 function authMsg(txt, tipo){
   const m = $('#auth-msg');
   m.textContent = txt; m.className = 'auth-msg ' + tipo;
@@ -1245,7 +1265,7 @@ function pintarPago(){
         <button class="bill justo" onclick="pagoJusto()">Pago justo</button>
         <button class="bill borra" onclick="borraRec()">Borrar</button>
       </div>
-      <button class="mega verde" style="margin-top:6px" onclick="${rec>=total?'finalizarVenta()':''}"
+      <button class="mega verde" style="margin-top:6px" onclick="${rec>=total?'finalizarVenta(this)':''}"
         ${rec>=total?'':'disabled style="opacity:.5;margin-top:6px"'}>
         ${rec>=total?'✓ Cobrar y dar cambio':'Ingresa el monto recibido'}
       </button>`;
@@ -1254,7 +1274,7 @@ function pintarPago(){
       <p style="text-align:center;color:var(--humo);font-size:14px;margin:4px 0 14px">
         Se registrará como pago con ${esc(METODOS_PAGO.find(m=>m.id===metodo).n.toLowerCase())} por el monto exacto.
       </p>
-      <button class="mega verde" onclick="finalizarVenta()">✓ Confirmar cobro</button>`;
+      <button class="mega verde" onclick="finalizarVenta(this)">✓ Confirmar cobro</button>`;
   }
 
   $('#pos-root').innerHTML = techoHTML() + `
@@ -1277,7 +1297,7 @@ function pagoJusto(){ ESTADO.recibido = totalCarro(); pintarPago(); }
 function borraRec(){ ESTADO.recibido = 0; pintarPago(); }
 
 /* ---------- FINALIZAR (guarda en la nube) ---------- */
-async function finalizarVenta(){
+async function finalizarVenta(btn){
   const total = totalCarro();
   const metodo = ESTADO.metodoPago || 'efectivo';
   const rec = metodo === 'efectivo' ? ESTADO.recibido : total;
@@ -1286,7 +1306,7 @@ async function finalizarVenta(){
     nombre: p.nombre, cant: ESTADO.carro[p.id], precio: Number(p.precio)
   }));
 
-  mostrarCarga('Guardando venta…');
+  const restaurar = botonCargando(btn, 'Guardando venta…');
   try{
     const folio = await siguienteFolio();
     const empleado_nombre = ESTADO.empleadoSeleccionado || null;
@@ -1308,7 +1328,7 @@ async function finalizarVenta(){
     ocultarCarga();
     pintarCambio(cambio, metodo);
   }catch(e){
-    ocultarCarga();
+    restaurar();
     alert('No se pudo guardar la venta. Revisa tu conexión e inténtalo otra vez.');
   }
 }
@@ -1454,7 +1474,7 @@ function irConfig(){
         <div class="lbl">Nombre del negocio</div>
         <div style="display:flex;gap:8px">
           <input type="text" id="cfg-nombre" class="input-plano" maxlength="80" value="${esc(ESTADO.negocio.nombre)}">
-          <button class="iconbtn" style="width:auto;padding:0 14px" onclick="guardarNombre()">Guardar</button>
+          <button class="iconbtn" style="width:auto;padding:0 14px" onclick="guardarNombre(this)">Guardar</button>
         </div>
       </div>
 
@@ -1518,14 +1538,18 @@ async function elegirTema(clave){
   await sb.from('negocios').update({color:clave}).eq('id', ESTADO.negocio.id);
 }
 
-async function guardarNombre(){
+async function guardarNombre(btn){
   const nombre = $('#cfg-nombre').value.trim();
   if(!nombre) return;
-  mostrarCarga('Guardando…');
-  await sb.from('negocios').update({nombre}).eq('id', ESTADO.negocio.id);
-  ESTADO.negocio.nombre = nombre;
-  ocultarCarga();
-  irConfig();
+  const restaurar = botonCargando(btn, 'Guardando…');
+  try{
+    await sb.from('negocios').update({nombre}).eq('id', ESTADO.negocio.id);
+    ESTADO.negocio.nombre = nombre;
+    irConfig();
+  }catch(e){
+    restaurar();
+    alert('No se pudo guardar. Revisa tu conexión e inténtalo otra vez.');
+  }
 }
 
 /* ---------- subir logo (a Supabase Storage) ---------- */
@@ -1550,7 +1574,7 @@ async function subirLogo(input){
   const file = input.files[0];
   if(!file) return;
   if(!archivoEsImagenValida(file)){ input.value=''; return; }
-  mostrarCarga('Subiendo logo…');
+  const restaurar = botonCargando(input.previousElementSibling, 'Subiendo…');
   try{
     const img = await procesarImagenCircular(file, 300);
     const ruta = `${ESTADO.negocio.id}/logo-${Date.now()}.jpg`;
@@ -1559,10 +1583,9 @@ async function subirLogo(input){
     const { data:{ publicUrl } } = sb.storage.from('logos').getPublicUrl(ruta);
     await sb.from('negocios').update({logo_url: publicUrl}).eq('id', ESTADO.negocio.id);
     ESTADO.negocio.logo_url = publicUrl;
-    ocultarCarga();
     irConfig();
   }catch(e){
-    ocultarCarga();
+    restaurar();
     alert('No se pudo subir el logo. Revisa tu conexión e inténtalo otra vez.');
   }
 }
@@ -1590,7 +1613,7 @@ function modalNuevoProducto(){
     </div>
     <div class="fila-btn">
       <button class="btn-grande secundario" onclick="cerrarModal()">Cancelar</button>
-      <button class="btn-grande" onclick="guardarNuevoProducto()">Guardar</button>
+      <button class="btn-grande" onclick="guardarNuevoProducto(this)">Guardar</button>
     </div>`);
 }
 
@@ -1611,7 +1634,7 @@ function modalEditarProducto(id){
     </div>
     <div class="fila-btn">
       <button class="btn-grande secundario" onclick="cerrarModal()">Cancelar</button>
-      <button class="btn-grande" onclick="guardarEdicionProducto('${id}')">Guardar</button>
+      <button class="btn-grande" onclick="guardarEdicionProducto('${id}', this)">Guardar</button>
     </div>`);
 }
 
@@ -1635,36 +1658,36 @@ function leerStockInput(){
   return raw === '' ? null : Math.max(0, parseInt(raw, 10) || 0);
 }
 
-async function guardarNuevoProducto(){
+async function guardarNuevoProducto(btn){
   const nombre = $('#np-nombre').value.trim();
   const precio = parseFloat($('#np-precio').value) || 0;
   const stock = leerStockInput();
   const categoria = $('#np-categoria').value.trim() || null;
   if(!nombre) return alert('Escribe el nombre del producto.');
-  mostrarCarga('Guardando…');
+  const restaurar = botonCargando(btn, 'Guardando…');
   try{
     let foto_url = null;
     if(_fotoTemp) foto_url = await subirFotoProducto(_fotoTemp);
     const orden = ESTADO.productos.length;
     await sb.from('productos').insert([{negocio_id: ESTADO.negocio.id, nombre, precio, stock, categoria, foto_url, orden}]);
     await cargarDatos();
-    ocultarCarga(); cerrarModal(); irConfig();
-  }catch(e){ ocultarCarga(); alert('No se pudo guardar.'); }
+    cerrarModal(); irConfig();
+  }catch(e){ restaurar(); alert('No se pudo guardar.'); }
 }
 
-async function guardarEdicionProducto(id){
+async function guardarEdicionProducto(id, btn){
   const nombre = $('#np-nombre').value.trim();
   const precio = parseFloat($('#np-precio').value) || 0;
   const stock = leerStockInput();
   const categoria = $('#np-categoria').value.trim() || null;
-  mostrarCarga('Guardando…');
+  const restaurar = botonCargando(btn, 'Guardando…');
   try{
     const cambios = {nombre, precio, stock, categoria};
     if(_fotoTemp) cambios.foto_url = await subirFotoProducto(_fotoTemp);
     await sb.from('productos').update(cambios).eq('id', id);
     await cargarDatos();
-    ocultarCarga(); cerrarModal(); irConfig();
-  }catch(e){ ocultarCarga(); alert('No se pudo guardar.'); }
+    cerrarModal(); irConfig();
+  }catch(e){ restaurar(); alert('No se pudo guardar.'); }
 }
 
 async function borrarProductoUI(id){
