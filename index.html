@@ -398,6 +398,11 @@
   .prod-fila .info{flex:1;min-width:0}
   .prod-fila .info .n{font-weight:600;font-size:14.5px;line-height:1.2;color:var(--tinta)}
   .prod-fila .info .p{color:var(--verde);font-weight:600;font-size:13.5px}
+  .pill{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;
+    background:var(--relleno-sutil-fuerte);color:var(--humo);vertical-align:middle}
+  .pill.ok{background:color-mix(in srgb, var(--verde) 16%, transparent);color:var(--verde)}
+  .pill.pend{background:color-mix(in srgb, var(--oro) 18%, transparent);color:var(--oro)}
+  .pill.adm{background:var(--tinta);color:var(--crema-cl)}
   .prod-fila .info .stock{font-size:12px;color:var(--humo)}
   .prod-fila .info .stock.bajo{color:var(--rojo)}
   .prod-fila .acc{display:flex;gap:6px}
@@ -973,8 +978,10 @@ const sb = supabase.createClient(SB_URL, SB_KEY);
 let ESTADO = {
   usuario: null,
   negocio: null,       // {id, nombre, logo_url, color, plan}
+  rol: 'admin',        // 'admin' (dueño y a quien él ascienda) | 'empleado'
+  miNombre: '',        // con qué nombre se firman las ventas de esta cuenta
   productos: [],       // [{id, nombre, precio, foto_url, orden}]
-  empleados: [],        // [{id, nombre}] — solo para atribuir quién atendió cada venta
+  empleados: [],        // [{id, nombre, email, rol, usuario_id}] — cuentas del negocio
   carro: {},           // {producto_id: cantidad}
   recibido: 0,
   ultimaVenta: null,
@@ -1249,6 +1256,8 @@ function guardarCacheNegocio(){
     negocio: ESTADO.negocio,
     productos: ESTADO.productos,
     empleados: ESTADO.empleados,
+    rol: ESTADO.rol,
+    miNombre: ESTADO.miNombre,
     guardado_en: Date.now(),
   });
 }
@@ -1317,6 +1326,53 @@ async function sincronizarPendientes(silencioso = true){
 window.addEventListener('online', () => sincronizarPendientes());
 
 /* ============================================================
+   ROLES: quién es admin y quién solo cobra
+
+   El dueño del negocio siempre es admin. A los demás los da de alta él
+   con su correo; cuando esa persona se registra en la app con ese mismo
+   correo, su cuenta se liga sola al negocio (abajo, reclamarInvitacion).
+
+   Ojo: esconder botones NO es la seguridad. Lo que de verdad impide que
+   un empleado borre productos o vea reportes son las políticas de RLS
+   en Postgres; esto de aquí solo evita enseñarle puertas que no abren.
+   ============================================================ */
+const esAdmin = () => ESTADO.rol === 'admin';
+
+async function reclamarInvitacion(){
+  const correo = (ESTADO.usuario.email || '').trim().toLowerCase();
+  if(!correo) return;
+  try{
+    // RLS solo deja tocar la fila que lleva MI correo y que aún no tiene
+    // cuenta ligada, y solo para ligarla a MÍ
+    await sb.from('empleados').update({ usuario_id: ESTADO.usuario.id })
+      .is('usuario_id', null).ilike('email', correo);
+  }catch(e){ console.error(e); }
+}
+
+async function determinarRol(){
+  const correo = ESTADO.usuario.email || '';
+  if(ESTADO.negocio.dueno === ESTADO.usuario.id){
+    ESTADO.rol = 'admin';
+    ESTADO.miNombre = correo.split('@')[0] || 'Administrador';
+  } else {
+    ESTADO.rol = 'empleado';
+    ESTADO.miNombre = correo.split('@')[0] || 'Empleado';
+  }
+  try{
+    const { data } = await sb.from('empleados').select('*')
+      .eq('usuario_id', ESTADO.usuario.id).limit(1);
+    // se verifica que la fila sea de verdad la mía: RLS deja ver a todo el
+    // equipo, así que una fila cualquiera NO es prueba de quién soy
+    const yo = (data || []).find(e => e.usuario_id === ESTADO.usuario.id);
+    if(yo){
+      // el dueño sigue siendo admin aunque su ficha diga otra cosa
+      if(ESTADO.negocio.dueno !== ESTADO.usuario.id) ESTADO.rol = yo.rol || 'empleado';
+      ESTADO.miNombre = yo.nombre || ESTADO.miNombre;
+    }
+  }catch(e){ console.error(e); }
+}
+
+/* ============================================================
    ARRANQUE
    ============================================================ */
 async function arrancar(){
@@ -1332,7 +1388,11 @@ async function arrancar(){
 
     try{
       // ¿tiene negocio?
-      const { data: negocios, error } = await sb.from('negocios').select('*').eq('dueno', user.id).limit(1);
+      // si el admin lo dio de alta con su correo, aquí se liga su cuenta
+      await reclamarInvitacion();
+      // ya no se filtra por dueño: RLS devuelve el negocio del que esta
+      // cuenta es miembro, sea el dueño o un empleado dado de alta
+      const { data: negocios, error } = await sb.from('negocios').select('*').limit(1);
       if(error) throw error;
       if(!negocios || negocios.length===0){
         ocultarCarga();
@@ -1340,6 +1400,7 @@ async function arrancar(){
         return;
       }
       ESTADO.negocio = negocios[0];
+      await determinarRol();
       aplicarTema(ESTADO.negocio.color);
       if(ESTADO.negocio.activo === false){
         ocultarCarga();
@@ -1358,6 +1419,8 @@ async function arrancar(){
       ESTADO.negocio = cache.negocio;
       ESTADO.productos = cache.productos || [];
       ESTADO.empleados = cache.empleados || [];
+      ESTADO.rol = cache.rol || 'admin';
+      ESTADO.miNombre = cache.miNombre || '';
       aplicarTema(ESTADO.negocio.color);
     }
 
@@ -1435,27 +1498,45 @@ function techoHTML(){
 /* ---------- INICIO ---------- */
 async function irInicio(){
   const ventasHoy = await obtenerVentasDia(hoyLocal());
-  const totalHoy = ventasHoy.reduce((s,v)=> s + Number(v.total), 0);
-  const numHoy = ventasHoy.length;
 
-  $('#pos-root').innerHTML = techoHTML() + `
-    <div class="cuerpo">
+  // Al empleado no se le enseña cuánto lleva el negocio en el día: es
+  // información del dueño. Ve lo suyo, que es lo que necesita para
+  // trabajar y para cuadrar con su jefe al final del turno.
+  let encabezado;
+  if(esAdmin()){
+    const totalHoy = ventasHoy.reduce((s,v)=> s + Number(v.total), 0);
+    const numHoy = ventasHoy.length;
+    encabezado = `
       <div class="corte-hoy">
         <div class="ch-lbl fiesta">CORTE DE HOY</div>
         <div class="ch-total fiesta">${pesos(totalHoy)}</div>
         <div class="ch-sub">${numHoy} ${numHoy===1?'venta':'ventas'}</div>
-      </div>
+      </div>`;
+  } else {
+    const mias = ventasHoy.filter(v => v.empleado_nombre === ESTADO.miNombre).length;
+    encabezado = `
+      <div class="corte-hoy">
+        <div class="ch-lbl fiesta">HOLA, ${esc((ESTADO.miNombre||'').toUpperCase())}</div>
+        <div class="ch-total fiesta" style="font-size:30px">${mias}</div>
+        <div class="ch-sub">${mias===1?'venta tuya hoy':'ventas tuyas hoy'}</div>
+      </div>`;
+  }
+
+  $('#pos-root').innerHTML = techoHTML() + `
+    <div class="cuerpo">
+      ${encabezado}
       <button class="mega verde" onclick="irVenta()">
         <span class="mega-ic">${icono('carrito')}</span> Nueva venta
       </button>
+      ${esAdmin() ? `
       <button class="mega crema" onclick="irCorteCaja()">
         <span class="mega-ic">${icono('caja')}</span> Corte de caja
       </button>
       <button class="mega crema" onclick="irHistorial()">
         <span class="mega-ic">${icono('grafica')}</span> Historial y cortes
-      </button>
+      </button>` : ''}
       <button class="mega crema" onclick="irConfig()">
-        <span class="mega-ic">${icono('ajustes')}</span> Ajustes del negocio
+        <span class="mega-ic">${icono('ajustes')}</span> ${esAdmin() ? 'Ajustes del negocio' : 'Ajustes'}
       </button>
       <div class="firma">
         <button class="link-sal" onclick="uiLogout()">Cerrar sesión</button>
@@ -1547,12 +1628,6 @@ const METODOS_PAGO = [
 function irPago(){
   ESTADO.recibido = 0;
   ESTADO.metodoPago = 'efectivo';
-  ESTADO.empleadoSeleccionado = null;
-  pintarPago();
-}
-
-function elegirEmpleadoPorIndice(i){
-  ESTADO.empleadoSeleccionado = i===0 ? null : ESTADO.empleados[i-1].nombre;
   pintarPago();
 }
 
@@ -1578,12 +1653,12 @@ function pintarPago(){
     `<button class="cat-chip ${m.id===metodo?'on':''}" onclick="elegirMetodoPago('${m.id}')">${m.n}</button>`
   ).join('')}</div>`;
 
-  const chipsEmpleado = ESTADO.empleados.length ? `
-    <div class="lbl" style="margin-top:14px">Atendió</div>
-    <div class="cat-chips">${['Sin asignar', ...ESTADO.empleados.map(e=>e.nombre)].map((n,i)=>{
-      const val = i===0 ? null : n;
-      return `<button class="cat-chip ${ESTADO.empleadoSeleccionado===val?'on':''}" onclick="elegirEmpleadoPorIndice(${i})">${esc(n)}</button>`;
-    }).join('')}</div>` : '';
+  // la venta se firma sola con la cuenta que está cobrando: ya no hay que
+  // elegir de una lista (y nadie puede atribuirle una venta a otro)
+  const chipsEmpleado = `
+    <p style="text-align:center;color:var(--humo);font-size:12.5px;margin:12px 0 0">
+      Atiende: <b style="color:var(--tinta)">${esc(ESTADO.miNombre || 'tu cuenta')}</b>
+    </p>`;
 
   let cuerpoPago;
   if(esEfectivo){
@@ -1640,7 +1715,7 @@ async function finalizarVenta(btn){
     nombre: p.nombre, cant: ESTADO.carro[p.id], precio: Number(p.precio)
   }));
 
-  const empleado_nombre = ESTADO.empleadoSeleccionado || null;
+  const empleado_nombre = ESTADO.miNombre || null;
   // productos de esta venta que llevan control de inventario (stock != null);
   // el resto no lleva conteo y no se toca
   const descuentos = ESTADO.productos
@@ -1821,7 +1896,10 @@ async function verDetalleDia(fecha){
       ? `<span class="venta-anulada-tag" style="background:rgba(217,119,6,.14);color:var(--oro)">Sin subir</span>`
       : v.anulada
       ? `<span class="venta-anulada-tag">Anulada</span>`
-      : `<button class="iconbtn" style="width:auto;padding:0 12px;background:rgba(220,38,38,.1);color:var(--rojo)" onclick="anularVenta('${v.id}','${fecha}')">Anular</button>`;
+      // anular borra dinero del corte: no puede quedar en manos de quien cobra
+      : esAdmin()
+      ? `<button class="iconbtn" style="width:auto;padding:0 12px;background:rgba(220,38,38,.1);color:var(--rojo)" onclick="anularVenta('${v.id}','${fecha}')">Anular</button>`
+      : '';
     return `<div class="venta-fila ${v.anulada?'anulada':''}">
       <div class="info"><div class="n">${hora} · ${esc(v.folio||'')}</div><div class="p" style="color:var(--humo)">${esc(resumen)}</div></div>
       <div class="mt">${pesos(v.total)}</div>
@@ -1857,14 +1935,76 @@ function irConfig(){
     </div>`;
   }).join('');
 
-  const emps = ESTADO.empleados.map(e => `<div class="prod-fila">
+  const emps = ESTADO.empleados.map(e => {
+    const ligado = !!e.usuario_id;
+    const estado = !e.email
+      ? `<span class="pill">Sin cuenta</span>`
+      : ligado
+        ? `<span class="pill ok">Cuenta activa</span>`
+        : `<span class="pill pend">Falta que se registre</span>`;
+    return `<div class="prod-fila">
       <div class="mini" style="display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--relleno-sutil-fuerte);color:var(--tinta)">${esc(e.nombre.charAt(0).toUpperCase())}</div>
-      <div class="info"><div class="n">${esc(e.nombre)}</div></div>
+      <div class="info">
+        <div class="n">${esc(e.nombre)} ${e.rol==='admin'?'<span class="pill adm">Admin</span>':''}</div>
+        <div class="p" style="color:var(--humo);font-weight:500">${esc(e.email || 'sin correo')}</div>
+        <div style="margin-top:3px">${estado}</div>
+      </div>
       <div class="acc">
         <button class="iconbtn" aria-label="Editar ${esc(e.nombre)}" onclick="modalEditarEmpleado('${e.id}')">${icono('lapiz',16)}</button>
-        <button class="iconbtn del" aria-label="Borrar ${esc(e.nombre)}" onclick="borrarEmpleadoUI('${e.id}')">${icono('basura',16)}</button>
+        <button class="iconbtn del" aria-label="Quitar ${esc(e.nombre)}" onclick="borrarEmpleadoUI('${e.id}')">${icono('basura',16)}</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+
+  // El empleado ve una versión mínima: no tiene nada que configurar del
+  // negocio, pero sí necesita ayuda, avisos legales y cerrar sesión.
+  if(!esAdmin()){
+    $('#pos-root').innerHTML = techoHTML() + `
+      <div class="cuerpo">
+        <div class="topbar">
+          <button class="volver" onclick="irInicio()">${icono('chevron',16)} Inicio</button>
+          <span class="topbar-tit fiesta">AJUSTES</span>
+        </div>
+
+        <div class="config-item">
+          <div class="lbl">Tu cuenta</div>
+          <div style="font-size:15px;font-weight:600;color:var(--tinta)">${esc(ESTADO.miNombre)}</div>
+          <div style="font-size:13px;color:var(--humo);margin-top:2px">${esc(ESTADO.usuario.email||'')}</div>
+          <p style="color:var(--humo);font-size:12.5px;margin:10px 0 0">
+            Estás en <b>${esc(ESTADO.negocio.nombre)}</b> como empleado. Tus ventas se registran a tu nombre.
+            Para cambiar productos, precios o ver reportes, pídeselo al administrador del negocio.
+          </p>
+        </div>
+
+        <div class="config-item">
+          <div class="lbl">Impresora de tickets</div>
+          <div class="campo" style="margin-bottom:0">
+            <label>Ancho del rollo</label>
+            <select id="cfg-papel" onchange="guardarAnchoPapel(this.value)">
+              <option value="58" ${anchoPapel()===58?'selected':''}>58 mm (el más común)</option>
+              <option value="80" ${anchoPapel()===80?'selected':''}>80 mm</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="config-item">
+          <div class="lbl">Ayuda</div>
+          <a class="iconbtn" style="width:auto;padding:9px 14px;display:inline-flex;gap:8px;text-decoration:none;color:var(--tinta)"
+            href="mailto:willirock0403@gmail.com?subject=${encodeURIComponent('Soporte VentaFácil — ' + ESTADO.negocio.nombre)}">
+            ${icono('ayuda',16)} Contactar soporte
+          </a>
+        </div>
+
+        <div class="config-item">
+          <div class="lbl">Legal</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a class="iconbtn" style="width:auto;padding:9px 14px;text-decoration:none;color:var(--tinta)" href="/terminos.html" target="_blank" rel="noopener">Términos y Condiciones</a>
+            <a class="iconbtn" style="width:auto;padding:9px 14px;text-decoration:none;color:var(--tinta)" href="/privacidad.html" target="_blank" rel="noopener">Política de Privacidad</a>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
 
   $('#pos-root').innerHTML = techoHTML() + `
     <div class="cuerpo">
@@ -1922,11 +2062,12 @@ function irConfig(){
 
       <div class="config-item">
         <div class="lbl" style="display:flex;justify-content:space-between;align-items:center">
-          <span>Empleados (${ESTADO.empleados.length})</span>
+          <span>Equipo (${ESTADO.empleados.length})</span>
           <button class="iconbtn" style="width:auto;padding:6px 12px;background:var(--verde);color:#fff;border-color:var(--verde-osc)" onclick="modalNuevoEmpleado()">+ Nuevo</button>
         </div>
         <p style="color:var(--humo);font-size:12.5px;margin:6px 0 0">
-          Solo para saber quién atendió cada venta al ver el historial — no crea una cuenta ni un inicio de sesión aparte.
+          Cada persona entra con su propio correo y contraseña, y solo a este negocio.
+          El empleado únicamente puede cobrar; no ve reportes ni toca productos. Un admin puede todo.
         </p>
         <div style="margin-top:10px">${emps || '<p style="color:var(--humo);font-size:14px">Aún no hay empleados registrados.</p>'}</div>
       </div>
@@ -2172,53 +2313,95 @@ async function borrarProductoUI(id){
 }
 
 /* ---------- MODAL empleados (solo atribución, sin cuenta ni permisos) ---------- */
+function camposEmpleadoHTML(e){
+  const ligado = e && e.usuario_id;
+  return `
+    <div class="campo"><label>Nombre</label>
+      <input type="text" id="ne-nombre" placeholder="Ej. Karla" maxlength="60" value="${e ? esc(e.nombre) : ''}" oninput="limpiarError('ne-nombre')">
+    </div>
+    <div class="campo"><label>Correo con el que va a entrar</label>
+      <input type="email" id="ne-email" placeholder="karla@ejemplo.com" autocomplete="off" value="${e ? esc(e.email||'') : ''}"
+        ${ligado ? 'disabled style="opacity:.6"' : ''} oninput="limpiarError('ne-email')">
+    </div>
+    <div class="campo"><label>Permisos</label>
+      <select id="ne-rol">
+        <option value="empleado" ${!e || e.rol!=='admin' ? 'selected' : ''}>Empleado — solo puede cobrar</option>
+        <option value="admin" ${e && e.rol==='admin' ? 'selected' : ''}>Administrador — puede todo</option>
+      </select>
+    </div>
+    <p style="color:var(--humo);font-size:12.5px;margin:0 0 14px">
+      ${ligado
+        ? 'Esta persona ya tiene su cuenta ligada. El correo ya no se puede cambiar.'
+        : 'Después de guardar, dile que entre a la app y cree su cuenta con <b>ese mismo correo</b>. Al registrarse queda ligada sola a este negocio.'}
+    </p>`;
+}
+
 function modalNuevoEmpleado(){
   abrirModal(`
-    <h3 class="fiesta">Nuevo empleado</h3>
-    <div class="campo"><label>Nombre</label><input type="text" id="ne-nombre" placeholder="Ej. Karla" maxlength="60" oninput="limpiarError('ne-nombre')"></div>
+    <h3 class="fiesta">Agregar al equipo</h3>
+    ${camposEmpleadoHTML(null)}
     <div class="fila-btn">
       <button class="btn-grande secundario" onclick="cerrarModal()">Cancelar</button>
-      <button class="btn-grande" onclick="guardarNuevoEmpleado()">Guardar</button>
+      <button class="btn-grande" onclick="guardarNuevoEmpleado(this)">Guardar</button>
     </div>`);
 }
 
 function modalEditarEmpleado(id){
   const e = ESTADO.empleados.find(x=>x.id===id);
   abrirModal(`
-    <h3 class="fiesta">Editar empleado</h3>
-    <div class="campo"><label>Nombre</label><input type="text" id="ne-nombre" maxlength="60" value="${esc(e.nombre)}" oninput="limpiarError('ne-nombre')"></div>
+    <h3 class="fiesta">Editar acceso</h3>
+    ${camposEmpleadoHTML(e)}
     <div class="fila-btn">
       <button class="btn-grande secundario" onclick="cerrarModal()">Cancelar</button>
-      <button class="btn-grande" onclick="guardarEdicionEmpleado('${id}')">Guardar</button>
+      <button class="btn-grande" onclick="guardarEdicionEmpleado('${id}', this)">Guardar</button>
     </div>`);
 }
 
-async function guardarNuevoEmpleado(){
-  limpiarError('ne-nombre');
+function leerCamposEmpleado(){
+  limpiarErrores('ne-nombre','ne-email');
   const nombre = $('#ne-nombre').value.trim();
-  if(!nombre) return marcarError('ne-nombre','Escribe el nombre del empleado.');
-  mostrarCarga('Guardando…');
-  try{
-    await sb.from('empleados').insert([{negocio_id: ESTADO.negocio.id, nombre}]);
-    await cargarDatos();
-    ocultarCarga(); cerrarModal(); irConfig();
-  }catch(e){ ocultarCarga(); alert('No se pudo guardar.'); }
+  const campoEmail = $('#ne-email');
+  const email = campoEmail.disabled ? null : (campoEmail.value.trim().toLowerCase() || null);
+  const rol = $('#ne-rol').value === 'admin' ? 'admin' : 'empleado';
+  let ok = true;
+  if(!nombre){ marcarError('ne-nombre','Escribe el nombre.'); ok = false; }
+  if(email && !REGEX_EMAIL.test(email)){ marcarError('ne-email','Ese correo no se ve válido.'); ok = false; }
+  return ok ? { nombre, email, rol } : null;
 }
 
-async function guardarEdicionEmpleado(id){
-  limpiarError('ne-nombre');
-  const nombre = $('#ne-nombre').value.trim();
-  if(!nombre) return marcarError('ne-nombre','Escribe el nombre del empleado.');
-  mostrarCarga('Guardando…');
+async function guardarNuevoEmpleado(btn){
+  const datos = leerCamposEmpleado();
+  if(!datos) return;
+  const restaurar = botonCargando(btn, 'Guardando…');
   try{
-    await sb.from('empleados').update({nombre}).eq('id', id);
+    const { error } = await sb.from('empleados').insert([{ negocio_id: ESTADO.negocio.id, ...datos }]);
+    if(error) throw error;
     await cargarDatos();
-    ocultarCarga(); cerrarModal(); irConfig();
-  }catch(e){ ocultarCarga(); alert('No se pudo guardar.'); }
+    cerrarModal(); irConfig();
+  }catch(e){
+    console.error(e); restaurar();
+    alert(String(e.message||'').includes('duplicate')
+      ? 'Ese correo ya está dado de alta en tu negocio.'
+      : 'No se pudo guardar.');
+  }
+}
+
+async function guardarEdicionEmpleado(id, btn){
+  const datos = leerCamposEmpleado();
+  if(!datos) return;
+  const cambios = { nombre: datos.nombre, rol: datos.rol };
+  if(datos.email !== null) cambios.email = datos.email;   // si está bloqueado, no se toca
+  const restaurar = botonCargando(btn, 'Guardando…');
+  try{
+    const { error } = await sb.from('empleados').update(cambios).eq('id', id);
+    if(error) throw error;
+    await cargarDatos();
+    cerrarModal(); irConfig();
+  }catch(e){ console.error(e); restaurar(); alert('No se pudo guardar.'); }
 }
 
 async function borrarEmpleadoUI(id){
-  if(!confirm('¿Borrar este empleado? Las ventas que ya se le atribuyeron conservan su nombre.')) return;
+  if(!confirm('¿Quitar a esta persona del negocio? Perderá el acceso, pero las ventas que ya hizo conservan su nombre.')) return;
   mostrarCarga('Borrando…');
   await sb.from('empleados').update({activo:false}).eq('id', id);
   await cargarDatos();
