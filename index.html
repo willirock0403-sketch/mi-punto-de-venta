@@ -923,6 +923,7 @@ const ICONOS = {
   tienda:   '<path d="M4.5 10.3V19a1 1 0 0 0 1 1h3.5v-5.5h6V20H18.5a1 1 0 0 0 1-1v-8.7"/><path d="M3.3 10.3l1.3-5.1A1 1 0 0 1 5.6 4.4h12.8a1 1 0 0 1 1 .8l1.3 5.1"/><path d="M3.3 10.3a2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0"/>',
   pausa:    '<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>',
   chispas:  '<path d="M12 3.3l1.3 3.8L17 8.4l-3.7 1.3L12 13.6l-1.3-3.9L7 8.4l3.7-1.3L12 3.3z"/><path d="M19 14.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"/><path d="M5.2 14.8l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/>',
+  ayuda:    '<circle cx="12" cy="12" r="9"/><path d="M9.3 9.2a2.7 2.7 0 1 1 4 2.4c-.7.4-1.3 1-1.3 1.8v.3"/><circle cx="12" cy="16.3" r=".9" fill="currentColor" stroke="none"/>',
 };
 function icono(nombre, tam=18){
   return `<svg class="ic" width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[nombre]||''}</svg>`;
@@ -1561,6 +1562,14 @@ function irConfig(){
           Solo para saber quién atendió cada venta al ver el historial — no crea una cuenta ni un inicio de sesión aparte.
         </p>
         <div style="margin-top:10px">${emps || '<p style="color:var(--humo);font-size:14px">Aún no hay empleados registrados.</p>'}</div>
+      </div>
+
+      <div class="config-item">
+        <div class="lbl">Ayuda</div>
+        <a class="iconbtn" style="width:auto;padding:9px 14px;display:inline-flex;gap:8px;text-decoration:none;color:var(--tinta)"
+          href="mailto:willirock0403@gmail.com?subject=${encodeURIComponent('Soporte VentaFácil — ' + ESTADO.negocio.nombre)}">
+          ${icono('ayuda',16)} Contactar soporte
+        </a>
       </div>
     </div>`;
 }
