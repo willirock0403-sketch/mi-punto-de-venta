@@ -34,6 +34,11 @@
     --relleno-sutil-fuerte: rgba(120,120,140,.16);
     --resorte: cubic-bezier(.22,1,.36,1);
     --resorte-rebote: cubic-bezier(.34,1.56,.64,1);
+    /* color de las barras de las gráficas: el acento del negocio. En claro
+       el acento ya contrasta contra la tarjeta blanca; en oscuro se aclara
+       (ver el bloque de modo oscuro) porque varios temas no llegaban a 3:1
+       contra su propia tarjeta oscura. */
+    --barra: var(--verde);
   }
   /* estas variables no las toca el JS del selector de tema (solo colores de
      marca), así que el modo oscuro automático del sistema operativo las
@@ -48,6 +53,10 @@
       --sombra-1: 0 1px 2px rgba(0,0,0,.35), 0 1px 1px rgba(0,0,0,.28);
       --sombra-2: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.5);
       --sombra-3: 0 4px 10px rgba(0,0,0,.45), 0 16px 40px rgba(0,0,0,.6);
+      /* medido: con el acento tal cual, 4 de los 5 temas quedaban por debajo
+         de 3:1 contra su tarjeta oscura (azul 2.80, grafito 2.45, bosque
+         2.51, borgoña 2.34). Al 75% de acento los 5 pasan. */
+      --barra: color-mix(in srgb, var(--verde) 75%, white);
     }
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -88,6 +97,21 @@
     background:var(--oro);color:#fff;transition:transform .1s var(--resorte)}
   .chip-sync:active{transform:scale(.94)}
   .chip-sync.off{background:rgba(255,255,255,.14);color:rgba(255,255,255,.75)}
+
+  /* ---------- gráficas ---------- */
+  .fichas{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:11px}
+  .ficha{background:var(--crema-cl);border-radius:16px;padding:13px 11px;box-shadow:var(--sombra-1);text-align:center}
+  .ficha .f-lbl{font-size:11px;color:var(--humo);font-weight:600;line-height:1.25}
+  .ficha .f-val{font-size:19px;font-weight:700;color:var(--tinta);letter-spacing:-.02em;margin-top:3px}
+  .ficha .f-val.chico{font-size:15px}
+  .graf{width:100%;height:auto;display:block;overflow:visible}
+  .graf .barra{fill:var(--barra);cursor:pointer}
+  .graf .base{stroke:var(--hairline);stroke-width:1}
+  .graf .cat{fill:var(--humo);font-size:10px;font-weight:600}
+  .graf .val{fill:var(--tinta);font-size:11px;font-weight:700}
+  .graf-lectura{font-size:12.5px;color:var(--humo);min-height:18px;margin-top:2px}
+  .graf-lectura b{color:var(--tinta)}
+  .graf-vacio{color:var(--humo);font-size:13.5px;margin:6px 0 0}
 
   /* ---------- corte de caja ---------- */
   .cc-dif{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:12px;padding:13px;
@@ -2376,11 +2400,167 @@ async function guardarCorteCaja(btn){
   }
 }
 
+/* ============================================================
+   GRÁFICAS (SVG hecho a mano, sin librerías)
+
+   Son de una sola serie: el largo de la barra es lo que carga el dato,
+   el color solo es la marca del negocio. Por eso no llevan leyenda (el
+   título dice qué se está viendo) y solo se etiqueta el valor más alto
+   — un número sobre cada barra se vuelve ruido y nadie lo lee. El resto
+   de los valores se ve tocando la barra.
+   ============================================================ */
+const _graficas = {};
+
+function svgBarras(id, datos, opciones){
+  const o = opciones || {};
+  _graficas[id] = datos;
+  if(!datos.length || datos.every(d => !d.valor)){
+    return `<p class="graf-vacio">${esc(o.vacio || 'Todavía no hay datos suficientes.')}</p>`;
+  }
+  const W = 320, H = 150, ARRIBA = 22, ABAJO = 24;
+  const alto = H - ARRIBA - ABAJO;
+  const max = Math.max(...datos.map(d => d.valor));
+  const n = datos.length;
+  const paso = W / n;
+  const GAP = 2;                                   // separación en color de fondo
+  const ancho = Math.min(24, paso - GAP);          // barras delgadas: nunca llenan el carril
+  const iMax = datos.reduce((mejor,d,i) => d.valor > datos[mejor].valor ? i : mejor, 0);
+
+  const barras = datos.map((d,i) => {
+    const h = max > 0 ? (d.valor / max) * alto : 0;
+    const x = i*paso + (paso - ancho)/2;
+    const y = ARRIBA + (alto - h);
+    const r = Math.min(4, ancho/2, h);             // punta redondeada, base cuadrada
+    const cx = x + ancho/2;
+    const etiquetaMax = i === iMax && d.valor > 0
+      ? `<text class="val" x="${cx}" y="${y-7}" text-anchor="middle">${esc(o.formato ? o.formato(d.valor) : String(d.valor))}</text>`
+      : '';
+    const forma = h > 0
+      ? `<path class="barra" d="M${x},${y+h} L${x},${y+r} Q${x},${y} ${x+r},${y} L${x+ancho-r},${y} Q${x+ancho},${y} ${x+ancho},${y+r} L${x+ancho},${y+h} Z"
+           onclick="tocarBarra('${id}',${i})"><title>${esc(d.etiquetaLarga || d.etiqueta)}: ${esc(o.formato ? o.formato(d.valor) : String(d.valor))}</title></path>`
+      : '';
+    return `${forma}${etiquetaMax}
+      <text class="cat" x="${cx}" y="${H-8}" text-anchor="middle">${esc(d.etiqueta)}</text>`;
+  }).join('');
+
+  return `
+    <svg class="graf" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.resumen || '')}">
+      ${barras}
+      <line class="base" x1="0" y1="${ARRIBA+alto}" x2="${W}" y2="${ARRIBA+alto}"/>
+    </svg>
+    <div class="graf-lectura" id="lec-${id}">${esc(o.pista || 'Toca una barra para ver su monto.')}</div>`;
+}
+
+/* equivalente táctil del "pasar el mouse": al tocar una barra se lee su valor */
+function tocarBarra(id, i){
+  const d = (_graficas[id] || [])[i];
+  const lec = $('#lec-'+id);
+  if(!d || !lec) return;
+  lec.innerHTML = `${esc(d.etiquetaLarga || d.etiqueta)}: <b>${pesos(d.valor)}</b>`;
+}
+
+/* ventas por día de los últimos 7 días (incluye hoy) */
+function ventasUltimos7(ventas){
+  const dias = [];
+  const hoy = new Date();
+  for(let i = 6; i >= 0; i--){
+    const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - i);
+    const clave = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    dias.push({
+      clave,
+      // X para miércoles: con "M" para martes y miércoles no se distinguen
+      etiqueta: ['D','L','M','X','J','V','S'][d.getDay()],
+      etiquetaLarga: d.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'short'}),
+      valor: 0,
+    });
+  }
+  const porClave = {};
+  dias.forEach(d => porClave[d.clave] = d);
+  ventas.forEach(v => {
+    const f = (v.creado_en||'').slice(0,10);
+    if(porClave[f]) porClave[f].valor += Number(v.total);
+  });
+  return dias;
+}
+
+/* ventas por hora del día, solo en el rango de horas con actividad */
+function ventasPorHora(ventas){
+  const horas = Array.from({length:24}, () => 0);
+  ventas.forEach(v => {
+    const d = new Date(v.creado_en);
+    if(!isNaN(d)) horas[d.getHours()] += Number(v.total);
+  });
+  const conVenta = horas.map((v,i)=>({v,i})).filter(x=>x.v>0).map(x=>x.i);
+  if(!conVenta.length) return [];
+  const desde = Math.min(...conVenta), hasta = Math.max(...conVenta);
+  const fuera = [];
+  for(let h = desde; h <= hasta; h++){
+    fuera.push({
+      etiqueta: String(h),
+      etiquetaLarga: `${String(h).padStart(2,'0')}:00 a ${String(h).padStart(2,'0')}:59`,
+      valor: horas[h],
+    });
+  }
+  return fuera;
+}
+
+function dashboardHTML(ventas){
+  const dias = ventasUltimos7(ventas);
+  const semana = dias.reduce((s,d)=>s+d.valor, 0);
+  const conVenta = dias.filter(d=>d.valor>0).length;
+  const promedio = conVenta ? semana / conVenta : 0;
+  const mejor = dias.reduce((m,d)=> d.valor > m.valor ? d : m, dias[0]);
+  const horas = ventasPorHora(ventas.filter(v => dias.some(d => d.clave === (v.creado_en||'').slice(0,10))));
+  const horaPico = horas.reduce((m,h)=> !m || h.valor > m.valor ? h : m, null);
+
+  return `
+    <div class="fichas">
+      <div class="ficha">
+        <div class="f-lbl">Últimos 7 días</div>
+        <div class="f-val">${pesos(semana)}</div>
+      </div>
+      <div class="ficha">
+        <div class="f-lbl">Promedio por día abierto</div>
+        <div class="f-val">${pesos(Math.round(promedio))}</div>
+      </div>
+      <div class="ficha">
+        <div class="f-lbl">Hora más fuerte</div>
+        <div class="f-val ${horaPico?'':'chico'}">${horaPico ? String(horaPico.etiqueta).padStart(2,'0')+':00' : '—'}</div>
+      </div>
+    </div>
+
+    <div class="config-item">
+      <div class="lbl">Ventas de los últimos 7 días</div>
+      ${svgBarras('d7', dias, {
+        formato: pesos,
+        vacio: 'Aún no hay ventas en los últimos 7 días.',
+        resumen: `Ventas por día de los últimos 7 días. Total ${pesos(semana)}. Mejor día: ${mejor && mejor.valor ? mejor.etiquetaLarga+' con '+pesos(mejor.valor) : 'sin ventas'}.`,
+      })}
+    </div>
+
+    <div class="config-item">
+      <div class="lbl">Horas con más venta</div>
+      ${svgBarras('hrs', horas, {
+        formato: pesos,
+        vacio: 'Aún no hay ventas para ver las horas pico.',
+        pista: 'Toca una barra para ver el monto de esa hora.',
+        resumen: horaPico ? `Ventas por hora. La hora más fuerte es ${horaPico.etiquetaLarga} con ${pesos(horaPico.valor)}.` : 'Sin datos por hora.',
+      })}
+    </div>`;
+}
+
 async function irHistorial(){
   mostrarCarga('Cargando ventas…');
-  const { data: ventas } = await sb.from('ventas')
-    .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
-    .order('creado_en', {ascending:false}).limit(500);
+  let ventas = [];
+  try{
+    const r = await sb.from('ventas')
+      .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
+      .order('creado_en', {ascending:false}).limit(500);
+    if(r.error) throw r.error;
+    ventas = r.data || [];
+  }catch(e){ console.error(e); }
+  // las que todavía no suben también son ventas: deben contar aquí y en las gráficas
+  ventas = [...ventas, ...ventasPendientes()];
   ocultarCarga();
 
   // agrupar por día
@@ -2417,6 +2597,8 @@ async function irHistorial(){
         <button class="volver" onclick="irInicio()">${icono('chevron',16)} Inicio</button>
         <span class="topbar-tit fiesta">HISTORIAL</span>
       </div>
+
+      ${dashboardHTML(ventas)}
 
       <div class="config-item">
         <div class="lbl">Reporte por rango de fechas</div>
