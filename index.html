@@ -253,6 +253,8 @@
   .campo input,.campo select{width:100%;padding:13px 14px;border:none;border-radius:13px;font-size:16px;
     background:var(--relleno-sutil);color:var(--tinta);transition:box-shadow .15s}
   .campo input:focus,.campo select:focus{outline:none;box-shadow:0 0 0 2px var(--verde)}
+  .campo input.campo-error,.campo select.campo-error{box-shadow:0 0 0 2px var(--rojo)}
+  .campo-ayuda{color:var(--rojo);font-size:12px;font-weight:600;margin-top:6px}
   .campo select{-webkit-appearance:none;appearance:none;font-family:inherit;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 12px center;background-size:16px;padding-right:38px}
@@ -363,11 +365,11 @@
           <p class="sub">Entra a tu negocio</p>
           <div class="campo">
             <label>Correo</label>
-            <input type="email" id="li-email" placeholder="tucorreo@ejemplo.com" autocomplete="email">
+            <input type="email" id="li-email" placeholder="tucorreo@ejemplo.com" autocomplete="email" oninput="limpiarError('li-email')">
           </div>
           <div class="campo">
             <label>Contraseña</label>
-            <input type="password" id="li-pass" placeholder="••••••••" autocomplete="current-password">
+            <input type="password" id="li-pass" placeholder="••••••••" autocomplete="current-password" oninput="limpiarError('li-pass')">
           </div>
           <button class="btn-grande" onclick="uiLogin()">Entrar</button>
           <div class="auth-alt">¿Primera vez? <a onclick="verModo('registro')">Crea tu cuenta</a></div>
@@ -378,11 +380,11 @@
           <p class="sub">Empieza a vender en minutos</p>
           <div class="campo">
             <label>Correo</label>
-            <input type="email" id="re-email" placeholder="tucorreo@ejemplo.com" autocomplete="email">
+            <input type="email" id="re-email" placeholder="tucorreo@ejemplo.com" autocomplete="email" oninput="limpiarError('re-email')">
           </div>
           <div class="campo">
             <label>Contraseña</label>
-            <input type="password" id="re-pass" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+            <input type="password" id="re-pass" placeholder="Mínimo 6 caracteres" autocomplete="new-password" oninput="limpiarError('re-pass')">
           </div>
           <button class="btn-grande" onclick="uiRegistro()">Crear cuenta</button>
           <div class="auth-alt">¿Ya tienes cuenta? <a onclick="verModo('login')">Entra aquí</a></div>
@@ -409,7 +411,7 @@
         <p class="sub">Podrás cambiarlo después</p>
         <div class="campo">
           <label>Nombre del negocio</label>
-          <input type="text" id="ob-nombre" placeholder="Ej. Tacos Don Pepe" maxlength="80">
+          <input type="text" id="ob-nombre" placeholder="Ej. Tacos Don Pepe" maxlength="80" oninput="limpiarError('ob-nombre')">
         </div>
         <button class="btn-grande" onclick="uiCrearNegocio()">Crear mi negocio</button>
         <div class="auth-msg" id="ob-msg"></div>
@@ -966,21 +968,51 @@ function authMsg(txt, tipo){
   m.textContent = txt; m.className = 'auth-msg ' + tipo;
 }
 
+/* validación inline por campo: borde rojo + mensaje de ayuda debajo,
+   en vez de un alert() que interrumpe y no dice cuál campo está mal */
+function marcarError(inputId, mensaje){
+  const input = $('#'+inputId);
+  if(!input) return;
+  input.classList.add('campo-error');
+  let ayuda = input.nextElementSibling;
+  if(!ayuda || !ayuda.classList.contains('campo-ayuda')){
+    ayuda = document.createElement('div');
+    ayuda.className = 'campo-ayuda';
+    input.insertAdjacentElement('afterend', ayuda);
+  }
+  ayuda.textContent = mensaje;
+}
+function limpiarError(inputId){
+  const input = $('#'+inputId);
+  if(!input) return;
+  input.classList.remove('campo-error');
+  const ayuda = input.nextElementSibling;
+  if(ayuda && ayuda.classList.contains('campo-ayuda')) ayuda.remove();
+}
+function limpiarErrores(...ids){ ids.forEach(limpiarError); }
+const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /* ---------- navegación login/registro ---------- */
 function verModo(modo){
   $('#modo-login').style.display    = modo==='login' ? 'block' : 'none';
   $('#modo-registro').style.display = modo==='registro' ? 'block' : 'none';
   $('#auth-msg').className = 'auth-msg';
+  limpiarErrores('li-email','li-pass','re-email','re-pass');
 }
 
 /* ============================================================
    AUTENTICACIÓN
    ============================================================ */
 async function uiRegistro(){
+  limpiarErrores('re-email','re-pass');
   const email = $('#re-email').value.trim();
   const pass  = $('#re-pass').value;
-  if(!email || !pass){ return authMsg('Escribe tu correo y contraseña.', 'err'); }
-  if(pass.length < 6){ return authMsg('La contraseña debe tener al menos 6 caracteres.', 'err'); }
+  let ok = true;
+  if(!email){ marcarError('re-email','Escribe tu correo.'); ok = false; }
+  else if(!REGEX_EMAIL.test(email)){ marcarError('re-email','Ese correo no se ve válido.'); ok = false; }
+  if(!pass){ marcarError('re-pass','Escribe una contraseña.'); ok = false; }
+  else if(pass.length < 6){ marcarError('re-pass','Debe tener al menos 6 caracteres.'); ok = false; }
+  if(!ok) return;
   mostrarCarga('Creando tu cuenta…');
   try{
     const { data, error } = await sb.auth.signUp({ email, password: pass });
@@ -995,9 +1027,14 @@ async function uiRegistro(){
 }
 
 async function uiLogin(){
+  limpiarErrores('li-email','li-pass');
   const email = $('#li-email').value.trim();
   const pass  = $('#li-pass').value;
-  if(!email || !pass){ return authMsg('Escribe tu correo y contraseña.', 'err'); }
+  let ok = true;
+  if(!email){ marcarError('li-email','Escribe tu correo.'); ok = false; }
+  else if(!REGEX_EMAIL.test(email)){ marcarError('li-email','Ese correo no se ve válido.'); ok = false; }
+  if(!pass){ marcarError('li-pass','Escribe tu contraseña.'); ok = false; }
+  if(!ok) return;
   mostrarCarga('Entrando…');
   try{
     const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
@@ -1032,8 +1069,9 @@ function traducirError(msg){
    ONBOARDING: crear negocio
    ============================================================ */
 async function uiCrearNegocio(){
+  limpiarError('ob-nombre');
   const nombre = $('#ob-nombre').value.trim();
-  if(!nombre){ $('#ob-msg').className='auth-msg err'; $('#ob-msg').textContent='Escribe el nombre de tu negocio.'; return; }
+  if(!nombre){ marcarError('ob-nombre','Escribe el nombre de tu negocio.'); return; }
   mostrarCarga('Creando tu negocio…');
   try{
     const { data, error } = await sb.from('negocios')
@@ -1674,8 +1712,8 @@ function modalNuevoProducto(){
   _fotoTemp = null;
   abrirModal(`
     <h3 class="fiesta">Nuevo producto</h3>
-    <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" placeholder="Ej. Elote sencillo" maxlength="80"></div>
-    <div class="campo"><label>Precio</label><input type="number" id="np-precio" placeholder="0" min="0" step="0.5"></div>
+    <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" placeholder="Ej. Elote sencillo" maxlength="80" oninput="limpiarError('np-nombre')"></div>
+    <div class="campo"><label>Precio</label><input type="number" id="np-precio" placeholder="0" min="0" step="0.5" oninput="limpiarError('np-precio')"></div>
     <div class="campo"><label>Existencias (opcional)</label><input type="number" id="np-stock" placeholder="Sin control de inventario" min="0" step="1"></div>
     ${categoriaCampoHTML(null)}
     <div class="campo"><label>Foto (opcional)</label>
@@ -1694,8 +1732,8 @@ function modalEditarProducto(id){
   _fotoTemp = null;
   abrirModal(`
     <h3 class="fiesta">Editar producto</h3>
-    <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" maxlength="80" value="${esc(p.nombre)}"></div>
-    <div class="campo"><label>Precio</label><input type="number" id="np-precio" value="${p.precio}" min="0" step="0.5"></div>
+    <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" maxlength="80" value="${esc(p.nombre)}" oninput="limpiarError('np-nombre')"></div>
+    <div class="campo"><label>Precio</label><input type="number" id="np-precio" value="${p.precio}" min="0" step="0.5" oninput="limpiarError('np-precio')"></div>
     <div class="campo"><label>Existencias (opcional)</label><input type="number" id="np-stock" placeholder="Sin control de inventario" min="0" step="1" value="${p.stock===null||p.stock===undefined?'':p.stock}"></div>
     ${categoriaCampoHTML(p.categoria || null)}
     <div class="campo"><label>Foto</label>
@@ -1730,11 +1768,16 @@ function leerStockInput(){
 }
 
 async function guardarNuevoProducto(btn){
+  limpiarErrores('np-nombre','np-precio');
   const nombre = $('#np-nombre').value.trim();
-  const precio = parseFloat($('#np-precio').value) || 0;
+  const precioRaw = $('#np-precio').value;
+  const precio = parseFloat(precioRaw) || 0;
   const stock = leerStockInput();
   const categoria = leerCategoriaInput();
-  if(!nombre) return alert('Escribe el nombre del producto.');
+  let ok = true;
+  if(!nombre){ marcarError('np-nombre','Escribe el nombre del producto.'); ok = false; }
+  if(precioRaw !== '' && (isNaN(parseFloat(precioRaw)) || parseFloat(precioRaw) < 0)){ marcarError('np-precio','El precio no puede ser negativo.'); ok = false; }
+  if(!ok) return;
   const restaurar = botonCargando(btn, 'Guardando…');
   try{
     let foto_url = null;
@@ -1747,10 +1790,16 @@ async function guardarNuevoProducto(btn){
 }
 
 async function guardarEdicionProducto(id, btn){
+  limpiarErrores('np-nombre','np-precio');
   const nombre = $('#np-nombre').value.trim();
-  const precio = parseFloat($('#np-precio').value) || 0;
+  const precioRaw = $('#np-precio').value;
+  const precio = parseFloat(precioRaw) || 0;
   const stock = leerStockInput();
   const categoria = leerCategoriaInput();
+  let ok = true;
+  if(!nombre){ marcarError('np-nombre','Escribe el nombre del producto.'); ok = false; }
+  if(precioRaw !== '' && (isNaN(parseFloat(precioRaw)) || parseFloat(precioRaw) < 0)){ marcarError('np-precio','El precio no puede ser negativo.'); ok = false; }
+  if(!ok) return;
   const restaurar = botonCargando(btn, 'Guardando…');
   try{
     const cambios = {nombre, precio, stock, categoria};
@@ -1773,7 +1822,7 @@ async function borrarProductoUI(id){
 function modalNuevoEmpleado(){
   abrirModal(`
     <h3 class="fiesta">Nuevo empleado</h3>
-    <div class="campo"><label>Nombre</label><input type="text" id="ne-nombre" placeholder="Ej. Karla" maxlength="60"></div>
+    <div class="campo"><label>Nombre</label><input type="text" id="ne-nombre" placeholder="Ej. Karla" maxlength="60" oninput="limpiarError('ne-nombre')"></div>
     <div class="fila-btn">
       <button class="btn-grande secundario" onclick="cerrarModal()">Cancelar</button>
       <button class="btn-grande" onclick="guardarNuevoEmpleado()">Guardar</button>
@@ -1784,7 +1833,7 @@ function modalEditarEmpleado(id){
   const e = ESTADO.empleados.find(x=>x.id===id);
   abrirModal(`
     <h3 class="fiesta">Editar empleado</h3>
-    <div class="campo"><label>Nombre</label><input type="text" id="ne-nombre" maxlength="60" value="${esc(e.nombre)}"></div>
+    <div class="campo"><label>Nombre</label><input type="text" id="ne-nombre" maxlength="60" value="${esc(e.nombre)}" oninput="limpiarError('ne-nombre')"></div>
     <div class="fila-btn">
       <button class="btn-grande secundario" onclick="cerrarModal()">Cancelar</button>
       <button class="btn-grande" onclick="guardarEdicionEmpleado('${id}')">Guardar</button>
@@ -1792,8 +1841,9 @@ function modalEditarEmpleado(id){
 }
 
 async function guardarNuevoEmpleado(){
+  limpiarError('ne-nombre');
   const nombre = $('#ne-nombre').value.trim();
-  if(!nombre) return alert('Escribe el nombre del empleado.');
+  if(!nombre) return marcarError('ne-nombre','Escribe el nombre del empleado.');
   mostrarCarga('Guardando…');
   try{
     await sb.from('empleados').insert([{negocio_id: ESTADO.negocio.id, nombre}]);
@@ -1803,8 +1853,9 @@ async function guardarNuevoEmpleado(){
 }
 
 async function guardarEdicionEmpleado(id){
+  limpiarError('ne-nombre');
   const nombre = $('#ne-nombre').value.trim();
-  if(!nombre) return alert('Escribe el nombre del empleado.');
+  if(!nombre) return marcarError('ne-nombre','Escribe el nombre del empleado.');
   mostrarCarga('Guardando…');
   try{
     await sb.from('empleados').update({nombre}).eq('id', id);
