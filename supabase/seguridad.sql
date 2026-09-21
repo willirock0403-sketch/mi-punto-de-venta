@@ -19,6 +19,8 @@
 -- 1) Columnas nuevas usadas por la app (no rompen nada si ya existen)
 alter table public.negocios  add column if not exists activo   boolean not null default true;
 alter table public.productos add column if not exists categoria text;
+alter table public.ventas    add column if not exists anulada    boolean not null default false;
+alter table public.ventas    add column if not exists anulada_en timestamptz;
 
 -- 2) Activar RLS en las tablas del negocio
 alter table public.negocios  enable row level security;
@@ -78,9 +80,19 @@ create policy "ventas_insert_propio" on public.ventas
     exists (select 1 from public.negocios n where n.id = ventas.negocio_id and n.dueno = auth.uid())
   );
 
--- (No se permite editar ni borrar ventas ya registradas: son el
---  historial contable del negocio. Si necesitas poder corregirlas,
---  dilo y agregamos una política de update/delete a propósito.)
+-- Se permite ANULAR una venta ya registrada (marcarla, nunca borrarla ni
+-- editar sus montos) para poder corregir un cobro equivocado sin perder
+-- el registro contable. La app solo manda {anulada, anulada_en} al anular,
+-- pero esta política no impide técnicamente cambiar otros campos si alguien
+-- llamara la API directo con su propia llave — sigue protegida entre
+-- negocios (RLS), solo ya no es "solo insertar" dentro del propio negocio.
+drop policy if exists "ventas_update_propio" on public.ventas;
+create policy "ventas_update_propio" on public.ventas
+  for update using (
+    exists (select 1 from public.negocios n where n.id = ventas.negocio_id and n.dueno = auth.uid())
+  ) with check (
+    exists (select 1 from public.negocios n where n.id = ventas.negocio_id and n.dueno = auth.uid())
+  );
 
 -- 6) STORAGE: fotos de logo y de producto
 --    Se guardan como "<negocio_id>/archivo.jpg", así que solo el
