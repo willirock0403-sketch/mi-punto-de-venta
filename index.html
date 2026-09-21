@@ -94,8 +94,9 @@
   }
 
   .topbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}
-  .volver{background:var(--relleno-sutil);border:none;border-radius:10px;padding:8px 14px;
-    font-weight:600;font-size:14.5px;color:var(--tinta);transition:transform .1s var(--resorte),background .15s}
+  .volver{background:var(--relleno-sutil);border:none;border-radius:10px;padding:8px 14px 8px 10px;
+    font-weight:600;font-size:14.5px;color:var(--tinta);transition:transform .1s var(--resorte),background .15s;
+    display:inline-flex;align-items:center;gap:2px}
   .volver:active{transform:scale(.95);background:var(--relleno-sutil-fuerte)}
   .topbar-tit{font-size:17px;font-weight:700;color:var(--tinta);letter-spacing:-.01em}
 
@@ -110,7 +111,8 @@
     display:flex;align-items:center;justify-content:center;gap:9px;margin-bottom:11px;
     background:var(--crema-cl);color:var(--tinta);box-shadow:var(--sombra-1);
     transition:transform .12s var(--resorte),box-shadow .12s var(--resorte),opacity .12s}
-  .mega .mega-ic{font-size:19px}
+  .mega .mega-ic{display:inline-flex}
+  .ic{display:inline-block;vertical-align:-4px;flex-shrink:0}
   .mega.verde{background:var(--rojo);color:#fff;box-shadow:var(--sombra-2)}
   .mega:active{transform:scale(.975);opacity:.88}
   .mega.crema:active{background:var(--relleno-sutil)}
@@ -207,7 +209,8 @@
   .dh-sub{color:var(--humo);font-size:12.5px;margin:2px 0 12px}
   .dh-acc{display:flex;gap:8px}
   .mini-btn{flex:1;padding:10px;border:none;border-radius:11px;background:var(--relleno-sutil);color:var(--tinta);
-    font-weight:600;font-size:13px;transition:transform .1s var(--resorte),background .12s}
+    font-weight:600;font-size:13px;transition:transform .1s var(--resorte),background .12s;
+    display:inline-flex;align-items:center;justify-content:center;gap:5px}
   .mini-btn:active{transform:scale(.96);background:var(--relleno-sutil-fuerte)}
 
   .venta-fila{display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--hairline)}
@@ -344,7 +347,9 @@
   <div class="auth-wrap">
     <div class="auth-card">
       <div class="auth-top">
-        <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.08);margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:30px">🏪</div>
+        <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.08);margin:0 auto;display:flex;align-items:center;justify-content:center;color:#fff">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 10.3V19a1 1 0 0 0 1 1h3.5v-5.5h6V20H18.5a1 1 0 0 0 1-1v-8.7"/><path d="M3.3 10.3l1.3-5.1A1 1 0 0 1 5.6 4.4h12.8a1 1 0 0 1 1 .8l1.3 5.1"/><path d="M3.3 10.3a2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0"/></svg>
+        </div>
         <h1 class="fiesta">VentaFácil</h1>
         <p>RÁPIDO · SENCILLO · EN LA NUBE</p>
       </div>
@@ -390,7 +395,9 @@
   <div class="auth-wrap">
     <div class="auth-card">
       <div class="auth-top">
-        <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.08);margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:30px">🎉</div>
+        <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.08);margin:0 auto;display:flex;align-items:center;justify-content:center;color:#fff">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.3l1.3 3.8L17 8.4l-3.7 1.3L12 13.6l-1.3-3.9L7 8.4l3.7-1.3L12 3.3z"/><path d="M19 14.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"/><path d="M5.2 14.8l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/></svg>
+        </div>
         <h1 class="fiesta">¡Ya casi!</h1>
         <p>CONFIGURA TU NEGOCIO</p>
       </div>
@@ -413,7 +420,9 @@
   <div class="auth-wrap">
     <div class="auth-card">
       <div class="auth-top">
-        <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.08);margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:30px">⏸️</div>
+        <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.08);margin:0 auto;display:flex;align-items:center;justify-content:center;color:#fff">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/></svg>
+        </div>
         <h1 class="fiesta">Cuenta en pausa</h1>
         <p>ACCESO SUSPENDIDO</p>
       </div>
@@ -893,6 +902,29 @@ function aplicarTema(clave){
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => aplicarTema(_temaActual));
 aplicarTema('oceano'); // tema por defecto mientras se sabe cuál eligió el negocio (pantalla de login, splash)
 
+/* ---------- íconos propios (línea, estilo SF Symbols — sin emoji) ---------- */
+const ICONOS = {
+  chevron:  '<path d="M15 6l-6 6 6 6"/>',
+  carrito:  '<path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.6L21 8H6.2"/><circle cx="9.5" cy="20" r="1.3" fill="currentColor" stroke="none"/><circle cx="17" cy="20" r="1.3" fill="currentColor" stroke="none"/>',
+  grafica:  '<rect x="4.5" y="11" width="3.4" height="9" rx="1" fill="currentColor" stroke="none"/><rect x="10.3" y="5" width="3.4" height="15" rx="1" fill="currentColor" stroke="none"/><rect x="16.1" y="14" width="3.4" height="6" rx="1" fill="currentColor" stroke="none"/>',
+  ajustes:  '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2.5 12h3M18.5 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  check:    '<path d="M5 13l4 4L19 7"/>',
+  checkCirc:'<circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.6 2.6L16 9.3"/>',
+  compartir:'<path d="M12 3.2v11.3"/><path d="M8.2 7l3.8-3.8L15.8 7"/><path d="M5 12v6.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V12"/>',
+  mas:      '<path d="M12 5v14M5 12h14"/>',
+  lapiz:    '<path d="M4 20l.9-3.8L15.6 5.5a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2L7.9 19.1 4 20z"/><path d="M14.2 7l2.8 2.8"/>',
+  basura:   '<path d="M4.5 7h15"/><path d="M9.5 7V5.2a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.5 7l1 12.2a2 2 0 0 0 2 1.8h5a2 2 0 0 0 2-1.8L17.5 7"/><path d="M10.2 11v6M13.8 11v6"/>',
+  recibo:   '<path d="M6.5 3h11v18l-1.8-1.3L14 21l-1.8-1.3L10.5 21l-1.8-1.3L6.5 21V3z"/><path d="M9 8h6M9 11.5h6M9 15h3.5"/>',
+  doc:      '<path d="M7.2 3h6.6l4 4v13.2a.8.8 0 0 1-.8.8H7.2a.8.8 0 0 1-.8-.8V3.8a.8.8 0 0 1 .8-.8z"/><path d="M13.8 3v4h4"/><path d="M9 13h6M9 16.5h6"/>',
+  boleto:   '<path d="M4 8.3A1.8 1.8 0 0 1 5.8 6.5h12.4A1.8 1.8 0 0 1 20 8.3v1.9a2.1 2.1 0 0 0 0 3.6v1.9a1.8 1.8 0 0 1-1.8 1.8H5.8A1.8 1.8 0 0 1 4 15.7v-1.9a2.1 2.1 0 0 0 0-3.6V8.3z"/><path d="M13.5 7v2M13.5 11.3v1.4M13.5 15v2" stroke-dasharray="1.6 2"/>',
+  tienda:   '<path d="M4.5 10.3V19a1 1 0 0 0 1 1h3.5v-5.5h6V20H18.5a1 1 0 0 0 1-1v-8.7"/><path d="M3.3 10.3l1.3-5.1A1 1 0 0 1 5.6 4.4h12.8a1 1 0 0 1 1 .8l1.3 5.1"/><path d="M3.3 10.3a2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0 2.35 2.35 0 0 0 4.7 0"/>',
+  pausa:    '<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>',
+  chispas:  '<path d="M12 3.3l1.3 3.8L17 8.4l-3.7 1.3L12 13.6l-1.3-3.9L7 8.4l3.7-1.3L12 3.3z"/><path d="M19 14.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"/><path d="M5.2 14.8l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/>',
+};
+function icono(nombre, tam=18){
+  return `<svg class="ic" width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[nombre]||''}</svg>`;
+}
+
 /* ---------- utilidades ---------- */
 const $ = s => document.querySelector(s);
 const pesos = n => '$' + Number(n).toLocaleString('es-MX', {maximumFractionDigits: 2});
@@ -1115,13 +1147,13 @@ async function irInicio(){
         <div class="ch-sub">${numHoy} ${numHoy===1?'venta':'ventas'}</div>
       </div>
       <button class="mega verde" onclick="irVenta()">
-        <span class="mega-ic">🛒</span> Nueva venta
+        <span class="mega-ic">${icono('carrito')}</span> Nueva venta
       </button>
       <button class="mega crema" onclick="irHistorial()">
-        <span class="mega-ic">📊</span> Historial y cortes
+        <span class="mega-ic">${icono('grafica')}</span> Historial y cortes
       </button>
       <button class="mega crema" onclick="irConfig()">
-        <span class="mega-ic">⚙️</span> Ajustes del negocio
+        <span class="mega-ic">${icono('ajustes')}</span> Ajustes del negocio
       </button>
       <div class="firma">
         <button class="link-sal" onclick="uiLogout()">Cerrar sesión</button>
@@ -1173,7 +1205,7 @@ function pintarRejilla(){
   $('#pos-root').innerHTML = techoHTML() + `
     <div class="cuerpo con-barra">
       <div class="topbar">
-        <button class="volver" onclick="irInicio()">← Inicio</button>
+        <button class="volver" onclick="irInicio()">${icono('chevron',16)} Inicio</button>
         <span class="topbar-tit fiesta">NUEVA VENTA</span>
       </div>
       ${chips}
@@ -1267,20 +1299,20 @@ function pintarPago(){
       </div>
       <button class="mega verde" style="margin-top:6px" onclick="${rec>=total?'finalizarVenta(this)':''}"
         ${rec>=total?'':'disabled style="opacity:.5;margin-top:6px"'}>
-        ${rec>=total?'✓ Cobrar y dar cambio':'Ingresa el monto recibido'}
+        ${rec>=total?`<span class="mega-ic">${icono('check',18)}</span> Cobrar y dar cambio`:'Ingresa el monto recibido'}
       </button>`;
   } else {
     cuerpoPago = `
       <p style="text-align:center;color:var(--humo);font-size:14px;margin:4px 0 14px">
         Se registrará como pago con ${esc(METODOS_PAGO.find(m=>m.id===metodo).n.toLowerCase())} por el monto exacto.
       </p>
-      <button class="mega verde" onclick="finalizarVenta(this)">✓ Confirmar cobro</button>`;
+      <button class="mega verde" onclick="finalizarVenta(this)"><span class="mega-ic">${icono('check',18)}</span> Confirmar cobro</button>`;
   }
 
   $('#pos-root').innerHTML = techoHTML() + `
     <div class="cuerpo">
       <div class="topbar">
-        <button class="volver" onclick="irVenta()">← Volver</button>
+        <button class="volver" onclick="irVenta()">${icono('chevron',16)} Volver</button>
         <span class="topbar-tit fiesta">COBRAR</span>
       </div>
       <div class="resumen">${items}
@@ -1351,14 +1383,14 @@ function pintarCambio(cambio, metodo){
         <div class="cb-lbl fiesta">${esEfectivo?'CAMBIO':'PAGO CONFIRMADO'}</div>
         ${esEfectivo
           ? `<div class="cb-monto fiesta">${pesos(cambio)}</div>${chips?`<div class="cb-chips">${chips}</div>`:'<div class="cb-nada fiesta">¡Pago exacto!</div>'}`
-          : `<div class="cb-nada fiesta" style="margin-top:8px">✓ ${esc(METODOS_PAGO.find(m=>m.id===metodo)?.n || metodo)}</div>`}
+          : `<div class="cb-nada fiesta" style="margin-top:8px;display:flex;align-items:center;justify-content:center;gap:6px">${icono('checkCirc',20)} ${esc(METODOS_PAGO.find(m=>m.id===metodo)?.n || metodo)}</div>`}
       </div>
       <div class="fila-btn" style="display:flex;gap:10px;margin-top:16px">
-        <button class="mega crema" onclick="guardarTicket()">🎫 Ticket</button>
-        <button class="mega crema" onclick="compartirTicket()">📤 Compartir</button>
+        <button class="mega crema" onclick="guardarTicket()"><span class="mega-ic">${icono('boleto',18)}</span> Ticket</button>
+        <button class="mega crema" onclick="compartirTicket()"><span class="mega-ic">${icono('compartir',18)}</span> Compartir</button>
       </div>
       <button class="mega verde" style="margin-top:10px" onclick="nuevaVentaLimpia()">
-        ➕ Nueva venta
+        <span class="mega-ic">${icono('mas',18)}</span> Nueva venta
       </button>
     </div>`;
 }
@@ -1448,8 +1480,8 @@ function irConfig(){
       ${foto}
       <div class="info"><div class="n">${esc(p.nombre)}</div><div class="p">${pesos(p.precio)}</div>${stockTxt}</div>
       <div class="acc">
-        <button class="iconbtn" onclick="modalEditarProducto('${p.id}')">✏️</button>
-        <button class="iconbtn del" onclick="borrarProductoUI('${p.id}')">🗑️</button>
+        <button class="iconbtn" onclick="modalEditarProducto('${p.id}')">${icono('lapiz',16)}</button>
+        <button class="iconbtn del" onclick="borrarProductoUI('${p.id}')">${icono('basura',16)}</button>
       </div>
     </div>`;
   }).join('');
@@ -1458,15 +1490,15 @@ function irConfig(){
       <div class="mini" style="display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--relleno-sutil-fuerte);color:var(--tinta)">${esc(e.nombre.charAt(0).toUpperCase())}</div>
       <div class="info"><div class="n">${esc(e.nombre)}</div></div>
       <div class="acc">
-        <button class="iconbtn" onclick="modalEditarEmpleado('${e.id}')">✏️</button>
-        <button class="iconbtn del" onclick="borrarEmpleadoUI('${e.id}')">🗑️</button>
+        <button class="iconbtn" onclick="modalEditarEmpleado('${e.id}')">${icono('lapiz',16)}</button>
+        <button class="iconbtn del" onclick="borrarEmpleadoUI('${e.id}')">${icono('basura',16)}</button>
       </div>
     </div>`).join('');
 
   $('#pos-root').innerHTML = techoHTML() + `
     <div class="cuerpo">
       <div class="topbar">
-        <button class="volver" onclick="irInicio()">← Inicio</button>
+        <button class="volver" onclick="irInicio()">${icono('chevron',16)} Inicio</button>
         <span class="topbar-tit fiesta">AJUSTES</span>
       </div>
 
@@ -1483,7 +1515,7 @@ function irConfig(){
         <div style="display:flex;align-items:center;gap:12px">
           ${ESTADO.negocio.logo_url
             ? `<img class="fotoprev" style="margin:0" src="${esc(ESTADO.negocio.logo_url)}">`
-            : `<div class="fotoprev" style="margin:0;display:flex;align-items:center;justify-content:center;font-size:30px">🏪</div>`}
+            : `<div class="fotoprev" style="margin:0;display:flex;align-items:center;justify-content:center;color:var(--humo)">${icono('tienda',26)}</div>`}
           <div style="flex:1">
             <button class="iconbtn" style="width:auto;padding:9px 14px" onclick="$('#file-logo').click()">Subir logo</button>
             <input type="file" id="file-logo" accept="image/*" style="display:none" onchange="subirLogo(this)">
@@ -1503,7 +1535,7 @@ function irConfig(){
                 <span style="background:${t.verde}"></span>
               </span>
               <span class="tema-n">${t.nombre}</span>
-              ${activo?'<span class="tema-check">✓</span>':''}
+              ${activo?`<span class="tema-check">${icono('check',15)}</span>`:''}
             </button>`;
           }).join('')}
         </div>
@@ -1815,9 +1847,9 @@ async function irHistorial(){
       </div>
       <div class="dh-sub">${vs.length} ${vs.length===1?'venta':'ventas'}</div>
       <div class="dh-acc">
-        <button class="mini-btn" onclick="verDetalleDia('${f}')">🧾 Ver ventas</button>
-        <button class="mini-btn" onclick="pdfCorte('${f}')">📄 Corte PDF</button>
-        <button class="mini-btn" onclick="csvDia('${f}')">📊 Excel</button>
+        <button class="mini-btn" onclick="verDetalleDia('${f}')">${icono('recibo',15)} Ver ventas</button>
+        <button class="mini-btn" onclick="pdfCorte('${f}')">${icono('doc',15)} Corte PDF</button>
+        <button class="mini-btn" onclick="csvDia('${f}')">${icono('grafica',15)} Excel</button>
       </div>
     </div>`;
   }).join('');
@@ -1826,7 +1858,7 @@ async function irHistorial(){
   $('#pos-root').innerHTML = techoHTML() + `
     <div class="cuerpo">
       <div class="topbar">
-        <button class="volver" onclick="irInicio()">← Inicio</button>
+        <button class="volver" onclick="irInicio()">${icono('chevron',16)} Inicio</button>
         <span class="topbar-tit fiesta">HISTORIAL</span>
       </div>
 
@@ -1873,7 +1905,7 @@ async function verReporteRango(){
     </div>`).join('') || '<p style="color:var(--humo);font-size:13.5px;margin:8px 0 0">Sin ventas en este rango.</p>';
   $('#rp-resultado').innerHTML = `
     <div class="res-total" style="margin-top:10px"><span>${ventas.length} ${ventas.length===1?'venta':'ventas'}</span><span class="fiesta">${pesos(total)}</span></div>
-    <button class="mini-btn" style="width:100%;margin-top:8px" onclick="csvRango('${desde}','${hasta}')">📊 Descargar Excel del rango</button>
+    <button class="mini-btn" style="width:100%;margin-top:8px" onclick="csvRango('${desde}','${hasta}')">${icono('grafica',15)} Descargar Excel del rango</button>
     ${top.length ? `<div class="lbl" style="margin-top:16px">Más vendidos</div>${filasTop}` : ''}`;
 }
 
