@@ -19,6 +19,7 @@
 -- 1) Columnas nuevas usadas por la app (no rompen nada si ya existen)
 alter table public.negocios  add column if not exists activo   boolean not null default true;
 alter table public.productos add column if not exists categoria text;
+alter table public.productos add column if not exists stock integer;
 alter table public.ventas    add column if not exists anulada    boolean not null default false;
 alter table public.ventas    add column if not exists anulada_en timestamptz;
 alter table public.ventas    add column if not exists metodo_pago text not null default 'efectivo';
@@ -204,6 +205,29 @@ do $$ begin
   alter table public.ventas add constraint ventas_metodo_pago_valido
     check (metodo_pago in ('efectivo','tarjeta','transferencia'));
 exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.productos add constraint productos_stock_no_negativo check (stock is null or stock >= 0);
+exception when duplicate_object then null; end $$;
+
+-- ============================================================
+-- CONTROL DE INVENTARIO — "stock" es opcional (null = sin control).
+-- Descontar existencias al cerrar una venta necesita sumar/restar de forma
+-- atómica para no perder cambios si dos cobros llegan casi al mismo tiempo;
+-- un update normal desde el navegador (leer, restar, guardar) tiene ese
+-- riesgo. Esta función lo hace en un solo paso dentro de la base de datos.
+-- No es SECURITY DEFINER: corre con los permisos de quien la llama, así que
+-- sigue protegida por las políticas de RLS de "productos" de arriba — si el
+-- producto no es del negocio del usuario autenticado, no actualiza nada.
+-- ============================================================
+create or replace function public.descontar_stock(p_producto_id uuid, p_cantidad integer)
+returns void
+language sql
+as $$
+  update public.productos
+  set stock = greatest(stock - p_cantidad, 0)
+  where id = p_producto_id and stock is not null;
+$$;
 
 -- ============================================================
 -- ARCHIVOS SUBIDOS (logos y fotos de producto) — la app ya valida tipo

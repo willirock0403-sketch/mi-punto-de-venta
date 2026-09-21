@@ -134,6 +134,10 @@
     border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;
     box-shadow:0 2px 6px rgba(0,0,0,.16);z-index:2}
   .prod .menos:active,.prod .badge:active{transform:scale(.9)}
+  .prod-stock{font-size:11px;font-weight:600;color:var(--humo)}
+  .prod-stock.bajo{color:var(--rojo)}
+  .prod.agotado{opacity:.45}
+  .prod.agotado:active{transform:none}
 
   /* ---------- barra de cobro: material oscuro translúcido, fija abajo ---------- */
   .barra-cobro{position:fixed;bottom:0;left:0;right:0;max-width:520px;margin:0 auto;
@@ -275,6 +279,8 @@
   .prod-fila .info{flex:1;min-width:0}
   .prod-fila .info .n{font-weight:600;font-size:14.5px;line-height:1.2;color:var(--tinta)}
   .prod-fila .info .p{color:var(--verde);font-weight:600;font-size:13.5px}
+  .prod-fila .info .stock{font-size:12px;color:var(--humo)}
+  .prod-fila .info .stock.bajo{color:var(--rojo)}
   .prod-fila .acc{display:flex;gap:6px}
   .iconbtn{width:34px;height:34px;border-radius:10px;border:none;background:var(--relleno-sutil);
     font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;
@@ -1078,14 +1084,18 @@ function pintarRejilla(){
   ).join('')}</div>` : '';
   const celdas = prods.map(p => {
     const cant = ESTADO.carro[p.id] || 0;
+    const conStock = p.stock !== null && p.stock !== undefined;
+    const disponible = conStock ? p.stock - cant : null;
+    const agotado = conStock && disponible <= 0;
     const foto = p.foto_url
       ? `<img src="${esc(p.foto_url)}" alt="">`
       : `<div class="sin-foto">${esc(p.nombre.charAt(0).toUpperCase())}</div>`;
-    return `<button class="prod ${cant>0?'sel':''}" onclick="sumar('${p.id}')">
+    return `<button class="prod ${cant>0?'sel':''} ${agotado?'agotado':''}" ${agotado?'disabled':''} onclick="${agotado?'':`sumar('${p.id}')`}">
       ${cant>0?`<span class="badge">${cant}</span>`:''}
       <span class="aro">${foto}</span>
       <span class="prod-n">${esc(p.nombre)}</span>
-      <span class="prod-p">${pesos(p.precio)}</span>
+      <span class="prod-p">${agotado?'Agotado':pesos(p.precio)}</span>
+      ${conStock && !agotado ? `<span class="prod-stock ${disponible<=3?'bajo':''}">${disponible} disp.</span>` : ''}
       ${cant>0?`<span class="menos" onclick="event.stopPropagation();restar('${p.id}')">−</span>`:''}
     </button>`;
   }).join('');
@@ -1111,7 +1121,13 @@ function pintarRejilla(){
     </div>`;
 }
 
-function sumar(id){ ESTADO.carro[id] = (ESTADO.carro[id]||0)+1; pintarRejilla(); }
+function sumar(id){
+  const p = ESTADO.productos.find(x=>x.id===id);
+  const actual = ESTADO.carro[id]||0;
+  if(p && p.stock !== null && p.stock !== undefined && actual >= p.stock) return;
+  ESTADO.carro[id] = actual+1;
+  pintarRejilla();
+}
 function restar(id){
   if(ESTADO.carro[id]>0){ ESTADO.carro[id]--; if(ESTADO.carro[id]===0) delete ESTADO.carro[id]; }
   pintarRejilla();
@@ -1218,6 +1234,15 @@ async function finalizarVenta(){
     }]).select();
     if(error) throw error;
     ESTADO.ultimaVenta = { ...data[0], articulos, total, recibido: rec, cambio, folio, metodo_pago: metodo };
+    // descuenta existencias de los productos con control de inventario (stock != null);
+    // el resto no lleva conteo y no se toca. Se hace después de guardar la venta para
+    // no perder el cobro si esto llegara a fallar.
+    const conControl = ESTADO.productos.filter(p => (p.stock !== null && p.stock !== undefined) && ESTADO.carro[p.id]);
+    for(const p of conControl){
+      const cant = ESTADO.carro[p.id];
+      await sb.rpc('descontar_stock', { p_producto_id: p.id, p_cantidad: cant });
+      p.stock = Math.max(0, p.stock - cant);
+    }
     ocultarCarga();
     pintarCambio(cambio, metodo);
   }catch(e){
@@ -1333,9 +1358,13 @@ function irConfig(){
     const foto = p.foto_url
       ? `<img class="mini" src="${esc(p.foto_url)}">`
       : `<div class="mini" style="display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--oro);color:var(--madera)">${esc(p.nombre.charAt(0).toUpperCase())}</div>`;
+    const conStock = p.stock !== null && p.stock !== undefined;
+    const stockTxt = conStock
+      ? `<div class="stock ${p.stock<=3?'bajo':''}">${p.stock} en existencia</div>`
+      : '';
     return `<div class="prod-fila">
       ${foto}
-      <div class="info"><div class="n">${esc(p.nombre)}</div><div class="p">${pesos(p.precio)}</div></div>
+      <div class="info"><div class="n">${esc(p.nombre)}</div><div class="p">${pesos(p.precio)}</div>${stockTxt}</div>
       <div class="acc">
         <button class="iconbtn" onclick="modalEditarProducto('${p.id}')">✏️</button>
         <button class="iconbtn del" onclick="borrarProductoUI('${p.id}')">🗑️</button>
@@ -1469,6 +1498,7 @@ function modalNuevoProducto(){
     <h3 class="fiesta">Nuevo producto</h3>
     <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" placeholder="Ej. Elote sencillo" maxlength="80"></div>
     <div class="campo"><label>Precio</label><input type="number" id="np-precio" placeholder="0" min="0" step="0.5"></div>
+    <div class="campo"><label>Existencias (opcional)</label><input type="number" id="np-stock" placeholder="Sin control de inventario" min="0" step="1"></div>
     <div class="campo"><label>Categoría (opcional)</label><input type="text" id="np-categoria" placeholder="Ej. Bebidas" list="lista-categorias" maxlength="40"></div>
     <datalist id="lista-categorias">${categoriasDe(ESTADO.productos).filter(c=>c!=='Todos').map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
     <div class="campo"><label>Foto (opcional)</label>
@@ -1489,6 +1519,7 @@ function modalEditarProducto(id){
     <h3 class="fiesta">Editar producto</h3>
     <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" maxlength="80" value="${esc(p.nombre)}"></div>
     <div class="campo"><label>Precio</label><input type="number" id="np-precio" value="${p.precio}" min="0" step="0.5"></div>
+    <div class="campo"><label>Existencias (opcional)</label><input type="number" id="np-stock" placeholder="Sin control de inventario" min="0" step="1" value="${p.stock===null||p.stock===undefined?'':p.stock}"></div>
     <div class="campo"><label>Categoría (opcional)</label><input type="text" id="np-categoria" maxlength="40" value="${esc(p.categoria||'')}" placeholder="Ej. Bebidas" list="lista-categorias"></div>
     <datalist id="lista-categorias">${categoriasDe(ESTADO.productos).filter(c=>c!=='Todos').map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
     <div class="campo"><label>Foto</label>
@@ -1517,9 +1548,15 @@ async function previewFoto(input){
   prev.src = url; prev.style.display = 'block';
 }
 
+function leerStockInput(){
+  const raw = $('#np-stock').value.trim();
+  return raw === '' ? null : Math.max(0, parseInt(raw, 10) || 0);
+}
+
 async function guardarNuevoProducto(){
   const nombre = $('#np-nombre').value.trim();
   const precio = parseFloat($('#np-precio').value) || 0;
+  const stock = leerStockInput();
   const categoria = $('#np-categoria').value.trim() || null;
   if(!nombre) return alert('Escribe el nombre del producto.');
   mostrarCarga('Guardando…');
@@ -1527,7 +1564,7 @@ async function guardarNuevoProducto(){
     let foto_url = null;
     if(_fotoTemp) foto_url = await subirFotoProducto(_fotoTemp);
     const orden = ESTADO.productos.length;
-    await sb.from('productos').insert([{negocio_id: ESTADO.negocio.id, nombre, precio, categoria, foto_url, orden}]);
+    await sb.from('productos').insert([{negocio_id: ESTADO.negocio.id, nombre, precio, stock, categoria, foto_url, orden}]);
     await cargarDatos();
     ocultarCarga(); cerrarModal(); irConfig();
   }catch(e){ ocultarCarga(); alert('No se pudo guardar.'); }
@@ -1536,10 +1573,11 @@ async function guardarNuevoProducto(){
 async function guardarEdicionProducto(id){
   const nombre = $('#np-nombre').value.trim();
   const precio = parseFloat($('#np-precio').value) || 0;
+  const stock = leerStockInput();
   const categoria = $('#np-categoria').value.trim() || null;
   mostrarCarga('Guardando…');
   try{
-    const cambios = {nombre, precio, categoria};
+    const cambios = {nombre, precio, stock, categoria};
     if(_fotoTemp) cambios.foto_url = await subirFotoProducto(_fotoTemp);
     await sb.from('productos').update(cambios).eq('id', id);
     await cargarDatos();
