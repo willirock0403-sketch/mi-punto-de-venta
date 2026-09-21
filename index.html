@@ -191,6 +191,17 @@
     font-weight:600;font-size:13px;transition:transform .1s var(--resorte),background .12s}
   .mini-btn:active{transform:scale(.96);background:var(--relleno-sutil-fuerte)}
 
+  .venta-fila{display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--hairline)}
+  .venta-fila:last-child{border-bottom:none}
+  .venta-fila .info{flex:1;min-width:0}
+  .venta-fila .info .n{font-weight:600;font-size:13.5px;color:var(--tinta)}
+  .venta-fila .info .p{font-size:12px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .venta-fila .mt{font-weight:700;font-size:14.5px;color:var(--tinta);white-space:nowrap}
+  .venta-fila.anulada{opacity:.5}
+  .venta-fila.anulada .mt{text-decoration:line-through}
+  .venta-anulada-tag{font-size:11.5px;font-weight:700;color:var(--rojo);background:rgba(220,38,38,.1);
+    padding:4px 10px;border-radius:20px;white-space:nowrap}
+
   /* ---------- estados de pantalla ---------- */
   .pantalla{display:none}
   .pantalla.activa{display:block}
@@ -1217,11 +1228,58 @@ function nuevaVentaLimpia(){
 /* ---------- ventas del día (helper) ---------- */
 async function obtenerVentasDia(fecha){
   const { data } = await sb.from('ventas')
+    .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
+    .gte('creado_en', `${fecha}T00:00:00`)
+    .lte('creado_en', `${fecha}T23:59:59.999`)
+    .order('creado_en', {ascending:true});
+  return data || [];
+}
+
+/* igual que obtenerVentasDia pero incluye las anuladas — para poder verlas
+   y anularlas en el detalle del día, sin que cuenten en ningún total */
+async function obtenerVentasDiaCompleto(fecha){
+  const { data } = await sb.from('ventas')
     .select('*').eq('negocio_id', ESTADO.negocio.id)
     .gte('creado_en', `${fecha}T00:00:00`)
     .lte('creado_en', `${fecha}T23:59:59.999`)
     .order('creado_en', {ascending:true});
   return data || [];
+}
+
+async function anularVenta(id, fecha){
+  if(!confirm('¿Anular esta venta? No se borrará del registro, pero dejará de contar en tus totales.')) return;
+  mostrarCarga('Anulando…');
+  try{
+    await sb.from('ventas').update({anulada:true, anulada_en:new Date().toISOString()}).eq('id', id);
+    ocultarCarga();
+    await verDetalleDia(fecha);
+    irHistorial();
+  }catch(e){
+    ocultarCarga();
+    alert('No se pudo anular la venta. Revisa tu conexión e inténtalo otra vez.');
+  }
+}
+
+async function verDetalleDia(fecha){
+  const ventas = await obtenerVentasDiaCompleto(fecha);
+  const [a,m,d] = fecha.split('-');
+  const fechaTxt = new Date(a,m-1,d).toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'});
+  const filas = ventas.map(v=>{
+    const hora = new Date(v.creado_en).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    const resumen = v.articulos.map(a=>`${a.cant}× ${esc(a.nombre)}`).join(', ');
+    const accion = v.anulada
+      ? `<span class="venta-anulada-tag">Anulada</span>`
+      : `<button class="iconbtn" style="width:auto;padding:0 12px;background:rgba(220,38,38,.1);color:var(--rojo)" onclick="anularVenta('${v.id}','${fecha}')">Anular</button>`;
+    return `<div class="venta-fila ${v.anulada?'anulada':''}">
+      <div class="info"><div class="n">${hora} · ${esc(v.folio||'')}</div><div class="p" style="color:var(--humo)">${esc(resumen)}</div></div>
+      <div class="mt">${pesos(v.total)}</div>
+      ${accion}
+    </div>`;
+  }).join('') || '<p style="color:var(--humo);font-size:14px">No hay ventas registradas ese día.</p>';
+  abrirModal(`
+    <h3 class="fiesta">Ventas del ${esc(fechaTxt)}</h3>
+    <div style="max-height:60vh;overflow-y:auto">${filas}</div>
+    <div class="fila-btn"><button class="btn-grande secundario" onclick="cerrarModal()">Cerrar</button></div>`);
 }
 
 
@@ -1465,7 +1523,7 @@ async function subirFotoProducto(blob){
 
 async function obtenerVentasRango(desde, hasta){
   const { data } = await sb.from('ventas')
-    .select('*').eq('negocio_id', ESTADO.negocio.id)
+    .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
     .gte('creado_en', `${desde}T00:00:00`)
     .lte('creado_en', `${hasta}T23:59:59.999`)
     .order('creado_en', {ascending:true});
@@ -1496,7 +1554,7 @@ function procesarImagenCircular(file, tam){
 async function irHistorial(){
   mostrarCarga('Cargando ventas…');
   const { data: ventas } = await sb.from('ventas')
-    .select('*').eq('negocio_id', ESTADO.negocio.id)
+    .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
     .order('creado_en', {ascending:false}).limit(500);
   ocultarCarga();
 
@@ -1520,6 +1578,7 @@ async function irHistorial(){
       </div>
       <div class="dh-sub">${vs.length} ${vs.length===1?'venta':'ventas'}</div>
       <div class="dh-acc">
+        <button class="mini-btn" onclick="verDetalleDia('${f}')">🧾 Ver ventas</button>
         <button class="mini-btn" onclick="pdfCorte('${f}')">📄 Corte PDF</button>
         <button class="mini-btn" onclick="csvDia('${f}')">📊 Excel</button>
       </div>
