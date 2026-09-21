@@ -25,6 +25,16 @@ alter table public.ventas    add column if not exists anulada_en timestamptz;
 alter table public.ventas    add column if not exists metodo_pago text not null default 'efectivo';
 alter table public.ventas    add column if not exists empleado_nombre text;
 
+-- Folios: un contador por negocio y por día. Antes el folio se calculaba
+-- contando las ventas del día desde el navegador, lo que podía darle el
+-- MISMO folio a dos dispositivos cobrando al mismo tiempo.
+create table if not exists public.folios (
+  negocio_id uuid not null references public.negocios(id) on delete cascade,
+  fecha date not null,
+  ultimo integer not null default 0,
+  primary key (negocio_id, fecha)
+);
+
 -- Empleados: solo sirven para anotar quién atendió una venta en el historial.
 -- No tienen su propio inicio de sesión ni permisos — el dueño sigue siendo
 -- el único que entra a la app con su correo y contraseña.
@@ -41,6 +51,7 @@ alter table public.negocios  enable row level security;
 alter table public.productos enable row level security;
 alter table public.ventas    enable row level security;
 alter table public.empleados enable row level security;
+alter table public.folios    enable row level security;
 
 -- 3) NEGOCIOS: cada quien solo ve y edita el suyo
 drop policy if exists "negocios_select_propio" on public.negocios;
@@ -107,6 +118,29 @@ drop policy if exists "empleados_delete_propio" on public.empleados;
 create policy "empleados_delete_propio" on public.empleados
   for delete using (
     exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
+  );
+
+-- 4.2) FOLIOS: mismo patrón. La función siguiente_folio() de abajo corre con
+-- los permisos de quien la llama, así que estas políticas son las que impiden
+-- que alguien toque el contador de otro negocio.
+drop policy if exists "folios_select_propio" on public.folios;
+create policy "folios_select_propio" on public.folios
+  for select using (
+    exists (select 1 from public.negocios n where n.id = folios.negocio_id and n.dueno = auth.uid())
+  );
+
+drop policy if exists "folios_insert_propio" on public.folios;
+create policy "folios_insert_propio" on public.folios
+  for insert with check (
+    exists (select 1 from public.negocios n where n.id = folios.negocio_id and n.dueno = auth.uid())
+  );
+
+drop policy if exists "folios_update_propio" on public.folios;
+create policy "folios_update_propio" on public.folios
+  for update using (
+    exists (select 1 from public.negocios n where n.id = folios.negocio_id and n.dueno = auth.uid())
+  ) with check (
+    exists (select 1 from public.negocios n where n.id = folios.negocio_id and n.dueno = auth.uid())
   );
 
 -- 5) VENTAS: solo del negocio del usuario autenticado
@@ -275,6 +309,29 @@ as $$
   update public.productos
   set stock = greatest(stock - p_cantidad, 0)
   where id = p_producto_id and stock is not null;
+$$;
+
+-- ============================================================
+-- FOLIO DE VENTA — un número consecutivo por negocio y por día, asignado
+-- por la base de datos en un solo paso. Es lo que evita que dos celulares
+-- cobrando al mismo tiempo generen el mismo folio (antes se contaban las
+-- ventas del día desde el navegador, que sí se puede duplicar).
+-- Tampoco es SECURITY DEFINER: las políticas de RLS de "folios" son las
+-- que impiden tocar el contador de otro negocio.
+-- ============================================================
+create or replace function public.siguiente_folio(p_negocio_id uuid, p_fecha date)
+returns integer
+language plpgsql
+as $$
+declare v_folio integer;
+begin
+  insert into public.folios (negocio_id, fecha, ultimo)
+  values (p_negocio_id, p_fecha, 1)
+  on conflict (negocio_id, fecha)
+  do update set ultimo = public.folios.ultimo + 1
+  returning ultimo into v_folio;
+  return v_folio;
+end;
 $$;
 
 -- ============================================================

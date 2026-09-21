@@ -82,7 +82,12 @@
     border-bottom:1px solid rgba(255,255,255,.08);
   }
   .techo img{width:38px;height:38px;border-radius:50%;flex:0 0 38px;object-fit:cover}
-  .techo .marca{font-size:17px;color:#fff;line-height:1.15;margin:0;letter-spacing:-.01em}
+  .techo .marca{font-size:17px;color:#fff;line-height:1.15;margin:0;letter-spacing:-.01em;flex:1;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip-sync{flex:0 0 auto;border:none;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;
+    background:var(--oro);color:#fff;transition:transform .1s var(--resorte)}
+  .chip-sync:active{transform:scale(.94)}
+  .chip-sync.off{background:rgba(255,255,255,.14);color:rgba(255,255,255,.75)}
   .picado{display:none}
   @media (prefers-reduced-transparency: reduce){
     .techo{background:var(--madera);backdrop-filter:none}
@@ -1171,30 +1176,144 @@ async function sembrarEjemplo(){
 }
 
 /* ============================================================
+   OFFLINE: caché del catálogo + cola de ventas pendientes
+
+   Una caja registradora no se puede detener porque se cayó el wifi.
+   Por eso: (1) el catálogo del negocio se guarda en este dispositivo
+   para poder abrir la app y cobrar sin internet, y (2) las ventas que
+   no se puedan guardar en el momento se encolan aquí y se suben solas
+   en cuanto vuelve la señal. La venta nunca se pierde.
+   ============================================================ */
+const LS_CACHE  = u => `vf_cache_${u}`;
+const LS_PEND   = n => `vf_pend_${n}`;
+const LS_VENTAS = n => `vf_ventas_${n}`;
+
+function lsLeer(clave, porDefecto){
+  try{ const v = localStorage.getItem(clave); return v ? JSON.parse(v) : porDefecto; }
+  catch(e){ return porDefecto; }
+}
+function lsGuardar(clave, valor){
+  try{ localStorage.setItem(clave, JSON.stringify(valor)); }catch(e){}
+}
+
+function guardarCacheNegocio(){
+  if(!ESTADO.usuario || !ESTADO.negocio) return;
+  lsGuardar(LS_CACHE(ESTADO.usuario.id), {
+    negocio: ESTADO.negocio,
+    productos: ESTADO.productos,
+    empleados: ESTADO.empleados,
+    guardado_en: Date.now(),
+  });
+}
+function leerCacheNegocio(uid){ return lsLeer(LS_CACHE(uid), null); }
+
+/* mantiene al día la copia local de las ventas de hoy, para que el corte
+   sea correcto aunque justo después se caiga la conexión */
+function agregarVentaACacheDia(venta){
+  if(!ESTADO.negocio) return;
+  const hoy = hoyLocal();
+  const guardadas = lsLeer(LS_VENTAS(ESTADO.negocio.id), null);
+  const lista = (guardadas && guardadas.fecha === hoy) ? (guardadas.ventas || []) : [];
+  lista.push(venta);
+  lsGuardar(LS_VENTAS(ESTADO.negocio.id), { fecha: hoy, ventas: lista });
+}
+
+function ventasPendientes(){ return ESTADO.negocio ? lsLeer(LS_PEND(ESTADO.negocio.id), []) : []; }
+function guardarPendientes(lista){ if(ESTADO.negocio) lsGuardar(LS_PEND(ESTADO.negocio.id), lista); }
+function pendientesDeDia(fecha){
+  return ventasPendientes().filter(v => (v.creado_en||'').slice(0,10) === fecha);
+}
+function pendientesEnRango(desde, hasta){
+  return ventasPendientes().filter(v => {
+    const f = (v.creado_en||'').slice(0,10);
+    return f >= desde && f <= hasta;
+  });
+}
+
+/* sube a la nube las ventas que quedaron encoladas. Se llama sola al
+   arrancar y cuando el navegador avisa que volvió la conexión; también
+   se puede forzar tocando el aviso del encabezado. */
+let _sincronizando = false;
+async function sincronizarPendientes(silencioso = true){
+  if(_sincronizando || !ESTADO.negocio) return;
+  const cola = ventasPendientes();
+  if(!cola.length) return;
+  if(!navigator.onLine){
+    if(!silencioso) alert('Sigues sin conexión. Las ventas se subirán solas en cuanto haya internet.');
+    return;
+  }
+  _sincronizando = true;
+  const quedan = [];
+  for(const v of cola){
+    try{
+      const { _descuentos, pendiente, ...venta } = v;
+      const { error } = await sb.from('ventas').insert([venta]);
+      if(error) throw error;
+      for(const d of (_descuentos||[])){
+        await sb.rpc('descontar_stock', { p_producto_id: d.id, p_cantidad: d.cant });
+      }
+    }catch(e){ console.error(e); quedan.push(v); }
+  }
+  guardarPendientes(quedan);
+  _sincronizando = false;
+
+  const subidas = cola.length - quedan.length;
+  if(!silencioso){
+    alert(quedan.length === 0
+      ? `Listo: se ${subidas===1?'subió 1 venta':'subieron '+subidas+' ventas'}.`
+      : `Se subieron ${subidas}, pero ${quedan.length} siguen pendientes. Revisa tu conexión.`);
+  }
+  // si el usuario está parado en la pantalla de inicio, se repinta para que
+  // el corte del día y el aviso del encabezado queden al día
+  if(subidas > 0 && $('.corte-hoy')) irInicio();
+}
+window.addEventListener('online', () => sincronizarPendientes());
+
+/* ============================================================
    ARRANQUE
    ============================================================ */
 async function arrancar(){
   mostrarCarga();
   try{
-    const { data:{ user } } = await sb.auth.getUser();
+    // getSession lee la sesión guardada en este dispositivo (no pide red),
+    // así la app también abre sin internet. La seguridad no depende de esto:
+    // el servidor sigue validando el token en cada consulta, con RLS.
+    const { data:{ session } } = await sb.auth.getSession();
+    const user = session && session.user;
     if(!user){ ocultarCarga(); verModo('login'); verPantalla('p-auth'); return; }
     ESTADO.usuario = user;
 
-    // ¿tiene negocio?
-    const { data: negocios } = await sb.from('negocios').select('*').eq('dueno', user.id).limit(1);
-    if(!negocios || negocios.length===0){
-      ocultarCarga();
-      verPantalla('p-onboarding');
-      return;
+    try{
+      // ¿tiene negocio?
+      const { data: negocios, error } = await sb.from('negocios').select('*').eq('dueno', user.id).limit(1);
+      if(error) throw error;
+      if(!negocios || negocios.length===0){
+        ocultarCarga();
+        verPantalla('p-onboarding');
+        return;
+      }
+      ESTADO.negocio = negocios[0];
+      aplicarTema(ESTADO.negocio.color);
+      if(ESTADO.negocio.activo === false){
+        ocultarCarga();
+        verPantalla('p-suspendido');
+        return;
+      }
+      await cargarDatos();
+      await sincronizarPendientes();
+    }catch(e){
+      // sin internet: se abre con lo último que quedó guardado en el
+      // dispositivo, para poder seguir cobrando. Si nunca se ha abierto
+      // con conexión no hay nada que mostrar y se cae al login.
+      const cache = leerCacheNegocio(user.id);
+      if(!cache) throw e;
+      console.error(e);
+      ESTADO.negocio = cache.negocio;
+      ESTADO.productos = cache.productos || [];
+      ESTADO.empleados = cache.empleados || [];
+      aplicarTema(ESTADO.negocio.color);
     }
-    ESTADO.negocio = negocios[0];
-    aplicarTema(ESTADO.negocio.color);
-    if(ESTADO.negocio.activo === false){
-      ocultarCarga();
-      verPantalla('p-suspendido');
-      return;
-    }
-    await cargarDatos();
+
     ocultarCarga();
     entrarApp();
   }catch(e){
@@ -1205,14 +1324,17 @@ async function arrancar(){
 }
 
 async function cargarDatos(){
-  const { data: prods } = await sb.from('productos')
+  const { data: prods, error: e1 } = await sb.from('productos')
     .select('*').eq('negocio_id', ESTADO.negocio.id).eq('activo', true)
     .order('orden', {ascending:true});
+  if(e1) throw e1;
   ESTADO.productos = prods || [];
-  const { data: emps } = await sb.from('empleados')
+  const { data: emps, error: e2 } = await sb.from('empleados')
     .select('*').eq('negocio_id', ESTADO.negocio.id).eq('activo', true)
     .order('nombre', {ascending:true});
+  if(e2) throw e2;
   ESTADO.empleados = emps || [];
+  guardarCacheNegocio();
 }
 
 function entrarApp(){
@@ -1250,9 +1372,16 @@ function techoHTML(){
   const img = logo
     ? `<img src="${esc(logo)}" alt="logo">`
     : `<div style="width:38px;height:38px;border-radius:50%;background:var(--oro);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px;color:#fff;flex:0 0 38px">${esc(inicial)}</div>`;
+  const pend = ventasPendientes().length;
+  const aviso = pend
+    ? `<button class="chip-sync" onclick="sincronizarPendientes(false)" aria-label="Subir ${pend} ventas pendientes">
+         ${pend} sin subir
+       </button>`
+    : (!navigator.onLine ? `<span class="chip-sync off">Sin conexión</span>` : '');
   return `<div class="techo">
     ${img}
     <p class="marca fiesta">${esc(ESTADO.negocio.nombre)}</p>
+    ${aviso}
   </div>`;
 }
 
@@ -1461,38 +1590,80 @@ async function finalizarVenta(btn){
     nombre: p.nombre, cant: ESTADO.carro[p.id], precio: Number(p.precio)
   }));
 
+  const empleado_nombre = ESTADO.empleadoSeleccionado || null;
+  // productos de esta venta que llevan control de inventario (stock != null);
+  // el resto no lleva conteo y no se toca
+  const descuentos = ESTADO.productos
+    .filter(p => (p.stock !== null && p.stock !== undefined) && ESTADO.carro[p.id])
+    .map(p => ({ id: p.id, cant: ESTADO.carro[p.id] }));
+  const base = {
+    negocio_id: ESTADO.negocio.id,
+    articulos, total, recibido: rec, cambio, metodo_pago: metodo, empleado_nombre
+  };
+
   const restaurar = botonCargando(btn, 'Guardando venta…');
   try{
+    if(!navigator.onLine) throw new Error('sin conexión');
     const folio = await siguienteFolio();
-    const empleado_nombre = ESTADO.empleadoSeleccionado || null;
-    const { data, error } = await sb.from('ventas').insert([{
-      negocio_id: ESTADO.negocio.id,
-      folio, articulos, total, recibido: rec, cambio, metodo_pago: metodo, empleado_nombre
-    }]).select();
+    const { data, error } = await sb.from('ventas').insert([{ ...base, folio }]).select();
     if(error) throw error;
-    ESTADO.ultimaVenta = { ...data[0], articulos, total, recibido: rec, cambio, folio, metodo_pago: metodo, empleado_nombre };
-    // descuenta existencias de los productos con control de inventario (stock != null);
-    // el resto no lleva conteo y no se toca. Se hace después de guardar la venta para
-    // no perder el cobro si esto llegara a fallar.
-    const conControl = ESTADO.productos.filter(p => (p.stock !== null && p.stock !== undefined) && ESTADO.carro[p.id]);
-    for(const p of conControl){
-      const cant = ESTADO.carro[p.id];
-      await sb.rpc('descontar_stock', { p_producto_id: p.id, p_cantidad: cant });
-      p.stock = Math.max(0, p.stock - cant);
+    ESTADO.ultimaVenta = { ...data[0], ...base, folio };
+    agregarVentaACacheDia(ESTADO.ultimaVenta);
+    // el descuento de existencias va después de guardar la venta, para no
+    // perder el cobro si esto llegara a fallar
+    for(const d of descuentos){
+      await sb.rpc('descontar_stock', { p_producto_id: d.id, p_cantidad: d.cant });
     }
-    ocultarCarga();
+    descontarStockLocal(descuentos);
     pintarCambio(cambio, metodo);
   }catch(e){
-    restaurar();
-    alert('No se pudo guardar la venta. Revisa tu conexión e inténtalo otra vez.');
+    // Sin conexión o falló el guardado: la venta NO se pierde ni se detiene
+    // el cobro. Se guarda en este dispositivo y se sube sola después.
+    console.error(e);
+    const venta = {
+      ...base,
+      folio: folioLocal(),
+      creado_en: new Date().toISOString(),
+      pendiente: true,
+    };
+    const cola = ventasPendientes();
+    cola.push({ ...venta, _descuentos: descuentos });
+    guardarPendientes(cola);
+    descontarStockLocal(descuentos);
+    ESTADO.ultimaVenta = venta;
+    pintarCambio(cambio, metodo);
   }
 }
 
+/* baja las existencias en memoria (y en la caché) para que la pantalla de
+   venta siga siendo correcta aunque el descuento en la nube venga después */
+function descontarStockLocal(descuentos){
+  descuentos.forEach(d => {
+    const p = ESTADO.productos.find(x => x.id === d.id);
+    if(p && p.stock !== null && p.stock !== undefined) p.stock = Math.max(0, p.stock - d.cant);
+  });
+  guardarCacheNegocio();
+}
+
 async function siguienteFolio(){
-  // folio secuencial por día
   const hoy = hoyLocal();
+  try{
+    // el folio lo asigna la base de datos de forma atómica: dos dispositivos
+    // cobrando al mismo tiempo nunca reciben el mismo número
+    const { data, error } = await sb.rpc('siguiente_folio', { p_negocio_id: ESTADO.negocio.id, p_fecha: hoy });
+    if(error) throw error;
+    if(data !== null && data !== undefined) return String(data).padStart(3,'0');
+  }catch(e){ console.error(e); }
+  // respaldo por si todavía no se corre el SQL nuevo: se cuenta como antes
   const ventas = await obtenerVentasDia(hoy);
   return String(ventas.length + 1).padStart(3,'0');
+}
+
+/* folio de una venta hecha sin conexión: lleva "L" para que nunca se
+   confunda ni choque con los folios que asigna la nube */
+function folioLocal(){
+  const n = pendientesDeDia(hoyLocal()).length + 1;
+  return 'L' + String(n).padStart(3,'0');
 }
 
 /* ---------- CAMBIO ---------- */
@@ -1529,25 +1700,45 @@ function nuevaVentaLimpia(){
   irInicio();
 }
 
-/* ---------- ventas del día (helper) ---------- */
+/* ---------- ventas del día (helper) ----------
+   Siempre se suman las ventas que están en la cola sin subir: si no, el
+   corte del día diría menos de lo que realmente se cobró. Al sincronizar
+   salen de la cola, así que nunca se cuentan dos veces. */
 async function obtenerVentasDia(fecha){
-  const { data } = await sb.from('ventas')
-    .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
-    .gte('creado_en', `${fecha}T00:00:00`)
-    .lte('creado_en', `${fecha}T23:59:59.999`)
-    .order('creado_en', {ascending:true});
-  return data || [];
+  let data = [];
+  try{
+    const r = await sb.from('ventas')
+      .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
+      .gte('creado_en', `${fecha}T00:00:00`)
+      .lte('creado_en', `${fecha}T23:59:59.999`)
+      .order('creado_en', {ascending:true});
+    if(r.error) throw r.error;
+    data = r.data || [];
+    if(fecha === hoyLocal()) lsGuardar(LS_VENTAS(ESTADO.negocio.id), { fecha, ventas: data });
+  }catch(e){
+    console.error(e);
+    // sin conexión: se usan las ventas del día que alcanzaron a guardarse en
+    // este dispositivo, si no el corte de hoy saldría más bajo de lo real
+    const guardadas = lsLeer(LS_VENTAS(ESTADO.negocio.id), null);
+    if(guardadas && guardadas.fecha === fecha) data = guardadas.ventas || [];
+  }
+  return [...data, ...pendientesDeDia(fecha)];
 }
 
 /* igual que obtenerVentasDia pero incluye las anuladas — para poder verlas
    y anularlas en el detalle del día, sin que cuenten en ningún total */
 async function obtenerVentasDiaCompleto(fecha){
-  const { data } = await sb.from('ventas')
-    .select('*').eq('negocio_id', ESTADO.negocio.id)
-    .gte('creado_en', `${fecha}T00:00:00`)
-    .lte('creado_en', `${fecha}T23:59:59.999`)
-    .order('creado_en', {ascending:true});
-  return data || [];
+  let data = [];
+  try{
+    const r = await sb.from('ventas')
+      .select('*').eq('negocio_id', ESTADO.negocio.id)
+      .gte('creado_en', `${fecha}T00:00:00`)
+      .lte('creado_en', `${fecha}T23:59:59.999`)
+      .order('creado_en', {ascending:true});
+    if(r.error) throw r.error;
+    data = r.data || [];
+  }catch(e){ console.error(e); }
+  return [...data, ...pendientesDeDia(fecha)];
 }
 
 async function anularVenta(id, fecha){
@@ -1571,7 +1762,11 @@ async function verDetalleDia(fecha){
   const filas = ventas.map(v=>{
     const hora = new Date(v.creado_en).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     const resumen = v.articulos.map(a=>`${a.cant}× ${esc(a.nombre)}`).join(', ') + (v.empleado_nombre ? ` · ${esc(v.empleado_nombre)}` : '');
-    const accion = v.anulada
+    // una venta que todavía no sube a la nube no se puede anular allá:
+    // primero tiene que existir. Se marca y ya se podrá anular al subir.
+    const accion = v.pendiente
+      ? `<span class="venta-anulada-tag" style="background:rgba(217,119,6,.14);color:var(--oro)">Sin subir</span>`
+      : v.anulada
       ? `<span class="venta-anulada-tag">Anulada</span>`
       : `<button class="iconbtn" style="width:auto;padding:0 12px;background:rgba(220,38,38,.1);color:var(--rojo)" onclick="anularVenta('${v.id}','${fecha}')">Anular</button>`;
     return `<div class="venta-fila ${v.anulada?'anulada':''}">
@@ -1970,12 +2165,17 @@ async function subirFotoProducto(blob){
 }
 
 async function obtenerVentasRango(desde, hasta){
-  const { data } = await sb.from('ventas')
-    .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
-    .gte('creado_en', `${desde}T00:00:00`)
-    .lte('creado_en', `${hasta}T23:59:59.999`)
-    .order('creado_en', {ascending:true});
-  return data || [];
+  let data = [];
+  try{
+    const r = await sb.from('ventas')
+      .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
+      .gte('creado_en', `${desde}T00:00:00`)
+      .lte('creado_en', `${hasta}T23:59:59.999`)
+      .order('creado_en', {ascending:true});
+    if(r.error) throw r.error;
+    data = r.data || [];
+  }catch(e){ console.error(e); }
+  return [...data, ...pendientesEnRango(desde, hasta)];
 }
 
 /* recorta la imagen a cuadrado y la reduce */
