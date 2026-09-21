@@ -250,9 +250,12 @@
   .campo{margin-bottom:13px}
   .campo label{display:block;font-size:12px;font-weight:600;color:var(--humo);margin-bottom:6px;
     text-transform:uppercase;letter-spacing:.04em}
-  .campo input{width:100%;padding:13px 14px;border:none;border-radius:13px;font-size:16px;
+  .campo input,.campo select{width:100%;padding:13px 14px;border:none;border-radius:13px;font-size:16px;
     background:var(--relleno-sutil);color:var(--tinta);transition:box-shadow .15s}
-  .campo input:focus{outline:none;box-shadow:0 0 0 2px var(--verde)}
+  .campo input:focus,.campo select:focus{outline:none;box-shadow:0 0 0 2px var(--verde)}
+  .campo select{-webkit-appearance:none;appearance:none;font-family:inherit;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center;background-size:16px;padding-right:38px}
   .btn-grande{width:100%;padding:15px;border:none;border-radius:14px;background:var(--verde);color:#fff;
     font-size:16px;font-weight:600;cursor:pointer;margin-top:4px;transition:transform .12s var(--resorte),opacity .12s}
   .btn-grande:active{transform:scale(.97);opacity:.9}
@@ -1629,6 +1632,35 @@ $('#modal-bg')?.addEventListener('click', e=>{ if(e.target.id==='modal-bg') cerr
 
 let _fotoTemp = null;
 
+/* selector de categoría: menú con las que ya existen + opción para escribir
+   una nueva, en vez de un campo de texto libre (que no dejaba ver de un
+   vistazo cuáles ya había, y era fácil crear "Bebidas" y "bebidas" por error) */
+function categoriaCampoHTML(actual){
+  const cats = categoriasDe(ESTADO.productos).filter(c=>c!=='Todos');
+  const opciones = cats.map(c=>`<option value="${esc(c)}" ${c===actual?'selected':''}>${esc(c)}</option>`).join('');
+  return `
+    <div class="campo">
+      <label>Categoría (opcional)</label>
+      <select id="np-categoria-sel" onchange="toggleCategoriaNueva(this)">
+        <option value="" ${!actual?'selected':''}>Sin categoría</option>
+        ${opciones}
+        <option value="__nueva__">+ Nueva categoría…</option>
+      </select>
+      <input type="text" id="np-categoria-txt" placeholder="Nombre de la nueva categoría" maxlength="40" style="display:none;margin-top:8px">
+    </div>`;
+}
+function toggleCategoriaNueva(sel){
+  const mostrar = sel.value === '__nueva__';
+  const txt = $('#np-categoria-txt');
+  txt.style.display = mostrar ? 'block' : 'none';
+  if(mostrar) txt.focus();
+}
+function leerCategoriaInput(){
+  const sel = $('#np-categoria-sel').value;
+  if(sel === '__nueva__') return $('#np-categoria-txt').value.trim() || null;
+  return sel || null;
+}
+
 function modalNuevoProducto(){
   _fotoTemp = null;
   abrirModal(`
@@ -1636,8 +1668,7 @@ function modalNuevoProducto(){
     <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" placeholder="Ej. Elote sencillo" maxlength="80"></div>
     <div class="campo"><label>Precio</label><input type="number" id="np-precio" placeholder="0" min="0" step="0.5"></div>
     <div class="campo"><label>Existencias (opcional)</label><input type="number" id="np-stock" placeholder="Sin control de inventario" min="0" step="1"></div>
-    <div class="campo"><label>Categoría (opcional)</label><input type="text" id="np-categoria" placeholder="Ej. Bebidas" list="lista-categorias" maxlength="40"></div>
-    <datalist id="lista-categorias">${categoriasDe(ESTADO.productos).filter(c=>c!=='Todos').map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
+    ${categoriaCampoHTML(null)}
     <div class="campo"><label>Foto (opcional)</label>
       <button class="iconbtn" style="width:auto;padding:9px 14px" onclick="$('#np-file').click()">Elegir foto</button>
       <input type="file" id="np-file" accept="image/*" style="display:none" onchange="previewFoto(this)">
@@ -1657,8 +1688,7 @@ function modalEditarProducto(id){
     <div class="campo"><label>Nombre</label><input type="text" id="np-nombre" maxlength="80" value="${esc(p.nombre)}"></div>
     <div class="campo"><label>Precio</label><input type="number" id="np-precio" value="${p.precio}" min="0" step="0.5"></div>
     <div class="campo"><label>Existencias (opcional)</label><input type="number" id="np-stock" placeholder="Sin control de inventario" min="0" step="1" value="${p.stock===null||p.stock===undefined?'':p.stock}"></div>
-    <div class="campo"><label>Categoría (opcional)</label><input type="text" id="np-categoria" maxlength="40" value="${esc(p.categoria||'')}" placeholder="Ej. Bebidas" list="lista-categorias"></div>
-    <datalist id="lista-categorias">${categoriasDe(ESTADO.productos).filter(c=>c!=='Todos').map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
+    ${categoriaCampoHTML(p.categoria || null)}
     <div class="campo"><label>Foto</label>
       <button class="iconbtn" style="width:auto;padding:9px 14px" onclick="$('#np-file').click()">Cambiar foto</button>
       <input type="file" id="np-file" accept="image/*" style="display:none" onchange="previewFoto(this)">
@@ -1694,7 +1724,7 @@ async function guardarNuevoProducto(btn){
   const nombre = $('#np-nombre').value.trim();
   const precio = parseFloat($('#np-precio').value) || 0;
   const stock = leerStockInput();
-  const categoria = $('#np-categoria').value.trim() || null;
+  const categoria = leerCategoriaInput();
   if(!nombre) return alert('Escribe el nombre del producto.');
   const restaurar = botonCargando(btn, 'Guardando…');
   try{
@@ -1711,7 +1741,7 @@ async function guardarEdicionProducto(id, btn){
   const nombre = $('#np-nombre').value.trim();
   const precio = parseFloat($('#np-precio').value) || 0;
   const stock = leerStockInput();
-  const categoria = $('#np-categoria').value.trim() || null;
+  const categoria = leerCategoriaInput();
   const restaurar = botonCargando(btn, 'Guardando…');
   try{
     const cambios = {nombre, precio, stock, categoria};
