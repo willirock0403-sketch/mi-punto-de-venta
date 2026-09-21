@@ -1114,8 +1114,22 @@ function totalCarro(){
 }
 
 /* ---------- PAGO ---------- */
+const METODOS_PAGO = [
+  {id:'efectivo', n:'Efectivo'},
+  {id:'tarjeta', n:'Tarjeta'},
+  {id:'transferencia', n:'Transferencia'},
+];
+
 function irPago(){
   ESTADO.recibido = 0;
+  ESTADO.metodoPago = 'efectivo';
+  pintarPago();
+}
+
+function elegirMetodoPago(id){
+  ESTADO.metodoPago = id;
+  if(id !== 'efectivo') ESTADO.recibido = totalCarro();
+  else ESTADO.recibido = 0;
   pintarPago();
 }
 
@@ -1125,23 +1139,22 @@ function pintarPago(){
     const c = ESTADO.carro[p.id];
     return `<div class="res-fila"><span>${c}× ${esc(p.nombre)}</span><span>${pesos(c*p.precio)}</span></div>`;
   }).join('');
+  const metodo = ESTADO.metodoPago || 'efectivo';
+  const esEfectivo = metodo === 'efectivo';
   const rec = ESTADO.recibido;
   const falta = total - rec;
-  let aviso = '';
-  if(rec > 0 && falta > 0) aviso = `<div class="aviso falta">Faltan ${pesos(falta)}</div>`;
-  else if(rec >= total && rec > 0) aviso = `<div class="aviso cambio">Cambio: <b>${pesos(rec-total)}</b></div>`;
 
-  const botones = [20,50,100,200,500].map(b=>`<button class="bill" onclick="addRec(${b})">$${b}</button>`).join('');
+  const chipsMetodo = `<div class="cat-chips">${METODOS_PAGO.map(m=>
+    `<button class="cat-chip ${m.id===metodo?'on':''}" onclick="elegirMetodoPago('${m.id}')">${m.n}</button>`
+  ).join('')}</div>`;
 
-  $('#pos-root').innerHTML = techoHTML() + `
-    <div class="cuerpo">
-      <div class="topbar">
-        <button class="volver" onclick="irVenta()">← Volver</button>
-        <span class="topbar-tit fiesta">COBRAR</span>
-      </div>
-      <div class="resumen">${items}
-        <div class="res-total"><span>TOTAL</span><span class="fiesta">${pesos(total)}</span></div>
-      </div>
+  let cuerpoPago;
+  if(esEfectivo){
+    let aviso = '';
+    if(rec > 0 && falta > 0) aviso = `<div class="aviso falta">Faltan ${pesos(falta)}</div>`;
+    else if(rec >= total && rec > 0) aviso = `<div class="aviso cambio">Cambio: <b>${pesos(rec-total)}</b></div>`;
+    const botones = [20,50,100,200,500].map(b=>`<button class="bill" onclick="addRec(${b})">$${b}</button>`).join('');
+    cuerpoPago = `
       <div class="pago-lbl">Recibido: <b class="fiesta">${pesos(rec)}</b></div>
       ${aviso}
       <div class="billetes">${botones}</div>
@@ -1152,7 +1165,26 @@ function pintarPago(){
       <button class="mega verde" style="margin-top:6px" onclick="${rec>=total?'finalizarVenta()':''}"
         ${rec>=total?'':'disabled style="opacity:.5;margin-top:6px"'}>
         ${rec>=total?'✓ Cobrar y dar cambio':'Ingresa el monto recibido'}
-      </button>
+      </button>`;
+  } else {
+    cuerpoPago = `
+      <p style="text-align:center;color:var(--humo);font-size:14px;margin:4px 0 14px">
+        Se registrará como pago con ${esc(METODOS_PAGO.find(m=>m.id===metodo).n.toLowerCase())} por el monto exacto.
+      </p>
+      <button class="mega verde" onclick="finalizarVenta()">✓ Confirmar cobro</button>`;
+  }
+
+  $('#pos-root').innerHTML = techoHTML() + `
+    <div class="cuerpo">
+      <div class="topbar">
+        <button class="volver" onclick="irVenta()">← Volver</button>
+        <span class="topbar-tit fiesta">COBRAR</span>
+      </div>
+      <div class="resumen">${items}
+        <div class="res-total"><span>TOTAL</span><span class="fiesta">${pesos(total)}</span></div>
+      </div>
+      ${chipsMetodo}
+      ${cuerpoPago}
     </div>`;
 }
 
@@ -1163,7 +1195,8 @@ function borraRec(){ ESTADO.recibido = 0; pintarPago(); }
 /* ---------- FINALIZAR (guarda en la nube) ---------- */
 async function finalizarVenta(){
   const total = totalCarro();
-  const rec = ESTADO.recibido;
+  const metodo = ESTADO.metodoPago || 'efectivo';
+  const rec = metodo === 'efectivo' ? ESTADO.recibido : total;
   const cambio = rec - total;
   const articulos = ESTADO.productos.filter(p=>ESTADO.carro[p.id]).map(p=>({
     nombre: p.nombre, cant: ESTADO.carro[p.id], precio: Number(p.precio)
@@ -1174,12 +1207,12 @@ async function finalizarVenta(){
     const folio = await siguienteFolio();
     const { data, error } = await sb.from('ventas').insert([{
       negocio_id: ESTADO.negocio.id,
-      folio, articulos, total, recibido: rec, cambio
+      folio, articulos, total, recibido: rec, cambio, metodo_pago: metodo
     }]).select();
     if(error) throw error;
-    ESTADO.ultimaVenta = { ...data[0], articulos, total, recibido: rec, cambio, folio };
+    ESTADO.ultimaVenta = { ...data[0], articulos, total, recibido: rec, cambio, folio, metodo_pago: metodo };
     ocultarCarga();
-    pintarCambio(cambio);
+    pintarCambio(cambio, metodo);
   }catch(e){
     ocultarCarga();
     alert('No se pudo guardar la venta. Revisa tu conexión e inténtalo otra vez.');
@@ -1194,15 +1227,17 @@ async function siguienteFolio(){
 }
 
 /* ---------- CAMBIO ---------- */
-function pintarCambio(cambio){
-  const desglose = desglosaCambio(cambio);
+function pintarCambio(cambio, metodo){
+  const esEfectivo = (metodo || 'efectivo') === 'efectivo';
+  const desglose = esEfectivo ? desglosaCambio(cambio) : [];
   const chips = desglose.map(d=>`<span class="chip">${d.n}× $${d.v}</span>`).join('');
   $('#pos-root').innerHTML = techoHTML() + `
     <div class="cuerpo cambio-vista">
       <div class="cambio-big">
-        <div class="cb-lbl fiesta">CAMBIO</div>
-        <div class="cb-monto fiesta">${pesos(cambio)}</div>
-        ${chips?`<div class="cb-chips">${chips}</div>`:'<div class="cb-nada fiesta">¡Pago exacto!</div>'}
+        <div class="cb-lbl fiesta">${esEfectivo?'CAMBIO':'PAGO CONFIRMADO'}</div>
+        ${esEfectivo
+          ? `<div class="cb-monto fiesta">${pesos(cambio)}</div>${chips?`<div class="cb-chips">${chips}</div>`:'<div class="cb-nada fiesta">¡Pago exacto!</div>'}`
+          : `<div class="cb-nada fiesta" style="margin-top:8px">✓ ${esc(METODOS_PAGO.find(m=>m.id===metodo)?.n || metodo)}</div>`}
       </div>
       <div class="fila-btn" style="display:flex;gap:10px;margin-top:16px">
         <button class="mega crema" onclick="guardarTicket()">🎫 Ticket</button>
@@ -1624,16 +1659,16 @@ async function csvRango(desde, hasta){
   mostrarCarga('Generando Excel…');
   try{
     const ventas = await obtenerVentasRango(desde, hasta);
-    let filas = [['Fecha','Hora','Folio','Producto','Cantidad','Precio','Importe','Total venta','Recibido','Cambio']];
+    let filas = [['Fecha','Hora','Folio','Producto','Cantidad','Precio','Importe','Total venta','Recibido','Cambio','Método de pago']];
     ventas.forEach(v=>{
       const dt = new Date(v.creado_en);
       const f = dt.toLocaleDateString('es-MX'); const h = dt.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
       v.articulos.forEach(a=>{
-        filas.push([f,h,v.folio||'',a.nombre,a.cant,a.precio,a.cant*a.precio,v.total,v.recibido||'',v.cambio||'']);
+        filas.push([f,h,v.folio||'',a.nombre,a.cant,a.precio,a.cant*a.precio,v.total,v.recibido||'',v.cambio||'',v.metodo_pago||'efectivo']);
       });
     });
     const total = ventas.reduce((s,v)=>s+Number(v.total),0);
-    filas.push([]); filas.push(['Totales','','','','','','','','',total]);
+    filas.push([]); filas.push(['Totales','','','','','','','','',total,'']);
     const csv = '﻿'+filas.map(f=>f.join(';')).join('\n');
     const blob = new Blob([csv],{type:'text/csv;charset=utf-8'});
     const url = URL.createObjectURL(blob);
@@ -1885,16 +1920,16 @@ async function csvDia(fecha){
   mostrarCarga('Generando Excel…');
   try{
     const ventas = await obtenerVentasDia(fecha);
-    let filas = [['Fecha','Hora','Folio','Producto','Cantidad','Precio','Importe','Total venta','Recibido','Cambio']];
+    let filas = [['Fecha','Hora','Folio','Producto','Cantidad','Precio','Importe','Total venta','Recibido','Cambio','Método de pago']];
     ventas.forEach(v=>{
       const dt = new Date(v.creado_en);
       const f = dt.toLocaleDateString('es-MX'); const h = dt.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
       v.articulos.forEach(a=>{
-        filas.push([f,h,v.folio||'',a.nombre,a.cant,a.precio,a.cant*a.precio,v.total,v.recibido||'',v.cambio||'']);
+        filas.push([f,h,v.folio||'',a.nombre,a.cant,a.precio,a.cant*a.precio,v.total,v.recibido||'',v.cambio||'',v.metodo_pago||'efectivo']);
       });
     });
     const total = ventas.reduce((s,v)=>s+Number(v.total),0);
-    filas.push([]); filas.push(['Totales','','','','','','','','',total]);
+    filas.push([]); filas.push(['Totales','','','','','','','','',total,'']);
     const csv = '\uFEFF'+filas.map(f=>f.join(';')).join('\n');
     const blob = new Blob([csv],{type:'text/csv;charset=utf-8'});
     const url = URL.createObjectURL(blob);
