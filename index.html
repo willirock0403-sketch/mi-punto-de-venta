@@ -2118,7 +2118,17 @@ async function csvRango(desde, hasta){
 
 function _rgb(hex){
   hex = (hex||'#1C7A2E').replace('#','');
-  return [parseInt(hex.slice(0,2),16), parseInt(hex.slice(2,4),16), parseInt(hex.slice(4,6),16)];
+  const r = [parseInt(hex.slice(0,2),16), parseInt(hex.slice(2,4),16), parseInt(hex.slice(4,6),16)];
+  // si el valor no era un hex de verdad (nunca debería pasar, pero mejor
+  // no tronar el PDF por eso) cae a un verde neutro en vez de NaN,NaN,NaN
+  return r.some(isNaN) ? [28,122,46] : r;
+}
+/* color de acento del negocio para tickets/cortes: ESTADO.negocio.color
+   guarda la CLAVE del tema (ej. "oceano"), no un hex — hay que resolverla
+   contra TEMAS antes de convertirla a RGB. */
+function _colorAcento(){
+  const t = TEMAS[ESTADO.negocio.color] || TEMAS.oceano;
+  return _rgb(t.verde);
 }
 function _mezcla(c, blanco, f){ // aclara un color hacia blanco (f=0..1)
   return c.map(x => Math.round(x + (255-x)*f));
@@ -2198,7 +2208,7 @@ function _encabezado(d, W, alto, color, logoData){
 
 /* ---------- TICKET (80mm) ---------- */
 async function generarTicket(v){
-  const color = _rgb(ESTADO.negocio.color);
+  const color = _colorAcento();
   const logo = await _logoData();
   const W = 80, FILA = 7;
   const alto = 40 + v.articulos.length*FILA;
@@ -2254,7 +2264,7 @@ async function generarTicket(v){
 
 /* ---------- CORTE DEL DÍA (A5) ---------- */
 async function generarCorte(fecha, ventas){
-  const color = _rgb(ESTADO.negocio.color);
+  const color = _colorAcento();
   const logo = await _logoData();
   const W=148, H=210;
   const d = _doc('a5');
@@ -2320,7 +2330,7 @@ async function guardarTicket(){
   try{
     const d = await generarTicket(ESTADO.ultimaVenta);
     d.save(`ticket-${ESTADO.ultimaVenta.folio||'venta'}.pdf`);
-  }catch(e){ alert('No se pudo generar el ticket.'); }
+  }catch(e){ console.error(e); alert('No se pudo generar el ticket.'); }
   ocultarCarga();
 }
 
@@ -2336,7 +2346,11 @@ async function compartirTicket(){
     } else {
       d.save(file.name);
     }
-  }catch(e){ ocultarCarga(); }
+  }catch(e){
+    ocultarCarga();
+    // AbortError: el usuario cerró la hoja de compartir sin elegir nada — no es un error real
+    if(e.name !== 'AbortError'){ console.error(e); alert('No se pudo compartir el ticket.'); }
+  }
 }
 
 async function pdfCorte(fecha){
@@ -2345,7 +2359,7 @@ async function pdfCorte(fecha){
     const ventas = await obtenerVentasDia(fecha);
     const d = await generarCorte(fecha, ventas);
     d.save(`corte-${fecha}.pdf`);
-  }catch(e){ alert('No se pudo generar el corte.'); }
+  }catch(e){ console.error(e); alert('No se pudo generar el corte.'); }
   ocultarCarga();
 }
 
