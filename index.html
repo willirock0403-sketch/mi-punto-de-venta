@@ -35,6 +35,21 @@
     --resorte: cubic-bezier(.22,1,.36,1);
     --resorte-rebote: cubic-bezier(.34,1.56,.64,1);
   }
+  /* estas variables no las toca el JS del selector de tema (solo colores de
+     marca), así que el modo oscuro automático del sistema operativo las
+     puede cambiar aquí directo: líneas y rellenos claros no se ven en fondo
+     oscuro, y las sombras suaves de "papel" necesitan más contraste. */
+  @media (prefers-color-scheme: dark){
+    :root{
+      --hairline: rgba(255,255,255,.12);
+      --hairline-fuerte: rgba(255,255,255,.20);
+      --relleno-sutil: rgba(255,255,255,.08);
+      --relleno-sutil-fuerte: rgba(255,255,255,.14);
+      --sombra-1: 0 1px 2px rgba(0,0,0,.35), 0 1px 1px rgba(0,0,0,.28);
+      --sombra-2: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.5);
+      --sombra-3: 0 4px 10px rgba(0,0,0,.45), 0 16px 40px rgba(0,0,0,.6);
+    }
+  }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
   .pos{
@@ -840,11 +855,38 @@ const TEMAS = {
   bosque:   { nombre:'Verde Bosque',   verde:'#1F5C48','verde-osc':'#143C30', rojo:'#0E2A22','rojo-osc':'#081C17', oro:'#3F7A63', crema:'#F2F6F4','crema-cl':'#FFFFFF', tinta:'#16211D', madera:'#0E2A22', humo:'#5F6F68' },
   borgona:  { nombre:'Borgoña',        verde:'#6B2737','verde-osc':'#451822', rojo:'#2A1015','rojo-osc':'#170A0C', oro:'#8A4550', crema:'#F6F0F1','crema-cl':'#FFFFFF', tinta:'#241A1B', madera:'#2A1015', humo:'#7A6367' },
 };
+/* modo oscuro automático: sigue el ajuste del sistema operativo, no un botón
+   dentro de la app. Cada tema define solo sus colores "de día"; para la
+   versión oscura se reutilizan esos mismos tonos de marca (nada de gris
+   genérico) invirtiendo fondo/texto: el "madera" (ya el más oscuro de cada
+   tema) pasa a ser el fondo, y el "crema" (el más claro) pasa a ser el texto. */
+let _temaActual = 'oceano';
 function aplicarTema(clave){
+  _temaActual = clave;
   const t = TEMAS[clave] || TEMAS.oceano;
+  const oscuro = matchMedia('(prefers-color-scheme: dark)').matches;
+  // Ojo: en varios temas "serios" (todos menos Océano) el rojo es EL MISMO
+  // tono que el madera (a propósito, para un look monocromático en claro).
+  // En oscuro eso volvería invisible al botón principal si solo cambiara el
+  // fondo, así que los acentos (verde/rojo/oro) también se aclaran un poco;
+  // el fondo se oscurece más allá del madera para no toparse con ellos.
+  const vals = !oscuro ? t : {
+    ...t,
+    verde: `color-mix(in srgb, ${t.verde} 78%, white)`,
+    'verde-osc': t.verde,
+    rojo: `color-mix(in srgb, ${t.rojo} 65%, white)`,
+    'rojo-osc': t.rojo,
+    oro: `color-mix(in srgb, ${t.oro} 80%, white)`,
+    crema: `color-mix(in srgb, ${t.madera} 35%, black)`,
+    'crema-cl': `color-mix(in srgb, ${t.madera} 90%, white)`,
+    tinta: t.crema,
+    humo: `color-mix(in srgb, ${t.humo} 70%, white)`,
+  };
   const raiz = document.documentElement.style;
-  Object.entries(t).forEach(([k,v])=>{ if(k!=='nombre') raiz.setProperty('--'+k, v); });
+  Object.entries(vals).forEach(([k,v])=>{ if(k!=='nombre') raiz.setProperty('--'+k, v); });
 }
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => aplicarTema(_temaActual));
+aplicarTema('oceano'); // tema por defecto mientras se sabe cuál eligió el negocio (pantalla de login, splash)
 
 /* ---------- utilidades ---------- */
 const $ = s => document.querySelector(s);
