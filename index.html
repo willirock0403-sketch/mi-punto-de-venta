@@ -98,6 +98,17 @@
   .chip-sync:active{transform:scale(.94)}
   .chip-sync.off{background:rgba(255,255,255,.14);color:rgba(255,255,255,.75)}
 
+  /* ---------- ticket para imprimir en el rollo ---------- */
+  #ticket-print{display:none}
+  @media print{
+    /* se oculta la app y solo se manda al papel el ticket, a lo ancho del rollo */
+    body > *{display:none!important}
+    #ticket-print{display:block!important;margin:0;padding:0;
+      font-family:"Courier New",Courier,monospace;font-size:12px;line-height:1.35;
+      white-space:pre;color:#000;background:#fff}
+    @page{margin:3mm;size:58mm auto}
+  }
+
   /* ---------- gráficas ---------- */
   .fichas{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:11px}
   .ficha{background:var(--crema-cl);border-radius:16px;padding:13px 11px;box-shadow:var(--sombra-1);text-align:center}
@@ -546,6 +557,9 @@
 </div>
 
 <div class="modal-bg" id="modal-bg"><div class="modal" id="modal-cont"></div></div>
+
+<!-- ticket para el diálogo de impresión del navegador: solo se ve al imprimir -->
+<pre id="ticket-print" aria-hidden="true"></pre>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>/** @license
@@ -1027,6 +1041,7 @@ const ICONOS = {
   chispas:  '<path d="M12 3.3l1.3 3.8L17 8.4l-3.7 1.3L12 13.6l-1.3-3.9L7 8.4l3.7-1.3L12 3.3z"/><path d="M19 14.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"/><path d="M5.2 14.8l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/>',
   ayuda:    '<circle cx="12" cy="12" r="9"/><path d="M9.3 9.2a2.7 2.7 0 1 1 4 2.4c-.7.4-1.3 1-1.3 1.8v.3"/><circle cx="12" cy="16.3" r=".9" fill="currentColor" stroke="none"/>',
   caja:     '<path d="M3.2 8.6h17.6v10.2a1 1 0 0 1-1 1H4.2a1 1 0 0 1-1-1V8.6z"/><path d="M4.6 8.6l1.7-3.5a1 1 0 0 1 .9-.6h9.6a1 1 0 0 1 .9.6l1.7 3.5"/><path d="M9.6 12.6h4.8"/>',
+  impresora:'<path d="M7 9V4.2a.8.8 0 0 1 .8-.8h8.4a.8.8 0 0 1 .8.8V9"/><path d="M6.2 9h11.6a2.3 2.3 0 0 1 2.3 2.3v4.4a.8.8 0 0 1-.8.8H17v3.3a.8.8 0 0 1-.8.8H7.8a.8.8 0 0 1-.8-.8V16.5H4.7a.8.8 0 0 1-.8-.8v-4.4A2.3 2.3 0 0 1 6.2 9z"/><path d="M9.6 17.4h4.8"/>',
 };
 function icono(nombre, tam=18){
   return `<svg class="ic" width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[nombre]||''}</svg>`;
@@ -1715,9 +1730,12 @@ function pintarCambio(cambio, metodo){
           : `<div class="cb-nada fiesta" style="margin-top:8px;display:flex;align-items:center;justify-content:center;gap:6px">${icono('checkCirc',20)} ${esc(METODOS_PAGO.find(m=>m.id===metodo)?.n || metodo)}</div>`}
       </div>
       <div class="fila-btn" style="display:flex;gap:10px;margin-top:16px">
-        <button class="mega crema" onclick="guardarTicket()"><span class="mega-ic">${icono('boleto',18)}</span> Ticket</button>
+        <button class="mega crema" onclick="imprimirTicket(this)"><span class="mega-ic">${icono('impresora',18)}</span> Imprimir</button>
         <button class="mega crema" onclick="compartirTicket()"><span class="mega-ic">${icono('compartir',18)}</span> Compartir</button>
       </div>
+      <button class="mini-btn" style="width:100%;margin-top:9px;padding:11px" onclick="guardarTicket()">
+        ${icono('boleto',15)} Guardar ticket en PDF
+      </button>
       <button class="mega verde" style="margin-top:10px" onclick="nuevaVentaLimpia()">
         <span class="mega-ic">${icono('mas',18)}</span> Nueva venta
       </button>
@@ -1911,6 +1929,22 @@ function irConfig(){
           Solo para saber quién atendió cada venta al ver el historial — no crea una cuenta ni un inicio de sesión aparte.
         </p>
         <div style="margin-top:10px">${emps || '<p style="color:var(--humo);font-size:14px">Aún no hay empleados registrados.</p>'}</div>
+      </div>
+
+      <div class="config-item">
+        <div class="lbl">Impresora de tickets</div>
+        <div class="campo" style="margin-bottom:0">
+          <label>Ancho del rollo</label>
+          <select id="cfg-papel" onchange="guardarAnchoPapel(this.value)">
+            <option value="58" ${anchoPapel()===58?'selected':''}>58 mm (el más común)</option>
+            <option value="80" ${anchoPapel()===80?'selected':''}>80 mm</option>
+          </select>
+        </div>
+        <p style="color:var(--humo);font-size:12.5px;margin:9px 0 0">
+          ${hayBluetooth()
+            ? 'Al cobrar, el botón Imprimir busca tu impresora por Bluetooth.'
+            : 'Este navegador no permite conectar impresoras por Bluetooth (en iPhone y iPad Apple no lo permite), así que Imprimir abre el diálogo de impresión del sistema.'}
+        </p>
       </div>
 
       <div class="config-item">
@@ -2881,6 +2915,201 @@ async function generarCorte(fecha, ventas){
   d.text('Generado '+new Date().toLocaleString('es-MX',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}), W/2, H-8, {align:'center'});
 
   return d;
+}
+
+/* ============================================================
+   IMPRESIÓN EN IMPRESORA TÉRMICA (58mm / 80mm)
+
+   Dos caminos, porque no todos los navegadores pueden lo mismo:
+
+   1) Bluetooth (ESC/POS): manda el ticket directo al rollo. Funciona
+      donde el navegador soporta Web Bluetooth — en la práctica Chrome
+      en Android y en computadora.
+   2) Diálogo de impresión del navegador: imprime el mismo ticket con
+      el ancho del rollo. Es el único camino en iPhone/iPad, porque
+      Apple no permite Web Bluetooth en Safari (ni en Chrome de iOS,
+      que por dentro es Safari). Sirve con impresoras AirPrint o para
+      "Guardar en Archivos" como PDF.
+   ============================================================ */
+const LS_PAPEL = n => `vf_papel_${n}`;
+function anchoPapel(){ return ESTADO.negocio ? (lsLeer(LS_PAPEL(ESTADO.negocio.id), 58) | 0) : 58; }
+function guardarAnchoPapel(mm){ if(ESTADO.negocio) lsGuardar(LS_PAPEL(ESTADO.negocio.id), mm|0); }
+function hayBluetooth(){ return typeof navigator !== 'undefined' && !!navigator.bluetooth; }
+
+/* Las impresoras térmicas baratas imprimen en tablas de caracteres viejas
+   (CP437/CP850) y cada modelo trae una distinta: mandar acentos en UTF-8
+   sale como basura. Se transliteran a ASCII: "ARTICULO" se lee bien,
+   "ARTÍCULO" con bytes equivocados no. */
+const SIN_ACENTO = {'á':'a','é':'e','í':'i','ó':'o','ú':'u','ü':'u','ñ':'n','Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','Ü':'U','Ñ':'N','¿':'?','¡':'!','°':'o','–':'-','—':'-','“':'"','”':'"','’':"'"};
+const aAscii = s => String(s ?? '').replace(/[^\x20-\x7E]/g, c => SIN_ACENTO[c] || '');
+
+/* arma el ticket como texto plano, a la medida del rollo. Lo usan los dos
+   caminos de impresión, así se ve igual por Bluetooth que por el diálogo. */
+function ticketTexto(v, cols){
+  const ancho = cols || (anchoPapel() === 80 ? 48 : 32);
+  const linea = c => (c || '-').repeat(ancho);
+  const centro = t => {
+    t = aAscii(t).slice(0, ancho);
+    const sobra = ancho - t.length;
+    return ' '.repeat(Math.floor(sobra/2)) + t;
+  };
+  const parImp = (izq, der) => {
+    izq = aAscii(izq); der = aAscii(der);
+    const sobra = ancho - izq.length - der.length;
+    return sobra >= 1 ? izq + ' '.repeat(sobra) + der
+                      : izq.slice(0, Math.max(0, ancho - der.length - 1)) + ' ' + der;
+  };
+
+  const fecha = new Date(v.creado_en || Date.now());
+  const L = [];
+  L.push(centro(ESTADO.negocio.nombre));
+  L.push('');
+  L.push(parImp('Folio: ' + (v.folio || '-'),
+                fecha.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'}) + ' ' +
+                fecha.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})));
+  if(v.empleado_nombre) L.push('Atendio: ' + aAscii(v.empleado_nombre));
+  L.push(linea());
+  // parte un texto en renglones sin cortar palabras a la mitad
+  const envolver = (texto, max) => {
+    const salida = [];
+    let renglon = '';
+    aAscii(texto).split(/\s+/).filter(Boolean).forEach(palabra => {
+      while(palabra.length > max){            // una palabra sola más larga que el rollo
+        if(renglon){ salida.push(renglon); renglon = ''; }
+        salida.push(palabra.slice(0, max));
+        palabra = palabra.slice(max);
+      }
+      if(!renglon) renglon = palabra;
+      else if(renglon.length + 1 + palabra.length <= max) renglon += ' ' + palabra;
+      else { salida.push(renglon); renglon = palabra; }
+    });
+    if(renglon) salida.push(renglon);
+    return salida.length ? salida : [''];
+  };
+
+  (v.articulos || []).forEach(a => {
+    const importe = pesos(a.cant * a.precio);
+    const titulo = `${a.cant} x ${aAscii(a.nombre)}`;
+    // el nombre nunca se corta: si no cabe con su importe, se va envolviendo
+    // por palabras y el importe se alinea en el último renglón que quepa
+    const renglones = envolver(titulo, ancho);
+    const ultimo = renglones[renglones.length - 1];
+    renglones.slice(0, -1).forEach(r => L.push(r));
+    if(ultimo.length + importe.length + 1 <= ancho) L.push(parImp(ultimo, importe));
+    else { L.push(ultimo); L.push(parImp('', importe)); }
+  });
+  L.push(linea());
+  L.push(parImp('TOTAL', pesos(v.total)));
+  if(v.recibido !== null && v.recibido !== undefined){
+    L.push(parImp('Recibido', pesos(v.recibido)));
+    L.push(parImp('Cambio', pesos(v.cambio)));
+  }
+  const metodo = METODOS_PAGO.find(m => m.id === (v.metodo_pago||'efectivo'));
+  L.push(parImp('Pago', aAscii(metodo ? metodo.n : v.metodo_pago)));
+  L.push('');
+  L.push(centro('Gracias por su compra!'));
+  return L.join('\n');
+}
+
+/* convierte el ticket a los bytes que entiende una impresora ESC/POS */
+function ticketEscPos(v){
+  const ESC = 0x1B, GS = 0x1D;
+  const bytes = [];
+  const crudo = s => { for(const c of s) bytes.push(c.charCodeAt(0) & 0xFF); };
+  bytes.push(ESC, 0x40);              // inicializar
+  bytes.push(ESC, 0x61, 0x01);        // centrado
+  bytes.push(GS, 0x21, 0x11);         // doble alto y ancho para el nombre
+  crudo(aAscii(ESTADO.negocio.nombre) + '\n');
+  bytes.push(GS, 0x21, 0x00);         // tamaño normal
+  bytes.push(ESC, 0x61, 0x00);        // alineado a la izquierda
+  // el nombre ya se imprimió en grande: se quita de las líneas de texto
+  crudo(ticketTexto(v).split('\n').slice(1).join('\n'));
+  crudo('\n\n\n\n');                  // avance para poder cortar
+  bytes.push(GS, 0x56, 0x42, 0x00);   // corte parcial (la ignoran las que no cortan)
+  return new Uint8Array(bytes);
+}
+
+/* servicios/características conocidos de impresoras térmicas BLE */
+const SERVICIOS_IMPRESORA = [
+  { servicio: '000018f0-0000-1000-8000-00805f9b34fb', caract: '00002af1-0000-1000-8000-00805f9b34fb' },
+  { servicio: '49535343-fe7d-4ae5-8fa9-9fafd205e455', caract: '49535343-8841-43f4-a8d4-ecbe34729bb3' },
+  { servicio: 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', caract: 'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f' },
+];
+
+async function imprimirPorBluetooth(v){
+  const dispositivo = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: SERVICIOS_IMPRESORA.map(s => s.servicio),
+  });
+  const servidor = await dispositivo.gatt.connect();
+  let caracteristica = null;
+  for(const s of SERVICIOS_IMPRESORA){
+    try{
+      const servicio = await servidor.getPrimaryService(s.servicio);
+      caracteristica = await servicio.getCharacteristic(s.caract);
+      break;
+    }catch(e){ /* esa impresora usa otro servicio: se prueba el siguiente */ }
+  }
+  if(!caracteristica){
+    servidor.disconnect();
+    throw new Error('La impresora no expone un servicio de impresión conocido.');
+  }
+  // Bluetooth LE manda paquetes chicos: hay que partir el ticket
+  const datos = ticketEscPos(v);
+  const TROZO = 180;
+  for(let i = 0; i < datos.length; i += TROZO){
+    const parte = datos.slice(i, i + TROZO);
+    if(caracteristica.writeValueWithoutResponse) await caracteristica.writeValueWithoutResponse(parte);
+    else await caracteristica.writeValue(parte);
+    await esperar(25);
+  }
+  await esperar(400);   // se le da tiempo de vaciar el búfer antes de colgar
+  servidor.disconnect();
+}
+
+function imprimirPorNavegador(v){
+  const mm = anchoPapel();
+  const cols = mm === 80 ? 48 : 32;
+  const margen = 3;                                   // mm de margen por lado
+  const usable = mm - margen*2;
+  // el texto tiene que caber EXACTO en el rollo: se calcula el tamaño de letra
+  // a partir del ancho del papel y las columnas (en monoespaciada, cada
+  // carácter mide ~0.6 del tamaño de fuente)
+  const tam = ((usable * 3.7795) / cols) / 0.6;
+
+  // @page no acepta variables, así que la regla se inyecta al vuelo
+  let estilo = $('#estilo-impresion');
+  if(!estilo){
+    estilo = document.createElement('style');
+    estilo.id = 'estilo-impresion';
+    document.head.appendChild(estilo);
+  }
+  estilo.textContent = `@media print{ @page{ margin:${margen}mm; size:${mm}mm auto } }`;
+
+  const caja = $('#ticket-print');
+  caja.style.fontSize = tam.toFixed(2) + 'px';
+  caja.textContent = ticketTexto(v, cols);
+  window.print();
+}
+
+async function imprimirTicket(btn){
+  const v = ESTADO.ultimaVenta;
+  if(!v) return alert('No hay una venta reciente para imprimir.');
+  if(!hayBluetooth()) return imprimirPorNavegador(v);
+
+  const restaurar = botonCargando(btn, 'Conectando…');
+  try{
+    await imprimirPorBluetooth(v);
+    restaurar();
+  }catch(e){
+    restaurar();
+    console.error(e);
+    // cancelar el selector de dispositivos no es un error que haya que gritar
+    if(e && (e.name === 'NotFoundError' || e.name === 'AbortError')) return;
+    if(confirm('No se pudo imprimir por Bluetooth. ¿Quieres usar el diálogo de impresión del navegador?')){
+      imprimirPorNavegador(v);
+    }
+  }
 }
 
 /* ---------- acciones ---------- */
