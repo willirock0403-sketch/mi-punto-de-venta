@@ -255,6 +255,12 @@
   .campo input:focus,.campo select:focus{outline:none;box-shadow:0 0 0 2px var(--verde)}
   .campo input.campo-error,.campo select.campo-error{box-shadow:0 0 0 2px var(--rojo)}
   .campo-ayuda{color:var(--rojo);font-size:12px;font-weight:600;margin-top:6px}
+  .check-row{display:flex;align-items:flex-start;gap:9px;cursor:pointer}
+  .check-row input{width:18px;height:18px;flex:0 0 18px;margin-top:1px;accent-color:var(--verde);
+    padding:0;background:none;border-radius:0}
+  .check-row span{font-size:13px;color:var(--humo);line-height:1.4}
+  .check-row.campo-error span{color:var(--rojo)}
+  .check-row a{color:var(--verde);font-weight:600;text-decoration:none}
   .campo select{-webkit-appearance:none;appearance:none;font-family:inherit;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 12px center;background-size:16px;padding-right:38px}
@@ -385,6 +391,12 @@
           <div class="campo">
             <label>Contraseña</label>
             <input type="password" id="re-pass" placeholder="Mínimo 6 caracteres" autocomplete="new-password" oninput="limpiarError('re-pass')">
+          </div>
+          <div class="campo">
+            <label class="check-row">
+              <input type="checkbox" id="re-acepto" onchange="limpiarError('re-acepto')">
+              <span>Acepto los <a href="/terminos.html" target="_blank" rel="noopener">Términos y Condiciones</a> y la <a href="/privacidad.html" target="_blank" rel="noopener">Política de Privacidad</a>.</span>
+            </label>
           </div>
           <button class="btn-grande" onclick="uiRegistro()">Crear cuenta</button>
           <div class="auth-alt">¿Ya tienes cuenta? <a onclick="verModo('login')">Entra aquí</a></div>
@@ -973,20 +985,25 @@ function authMsg(txt, tipo){
 function marcarError(inputId, mensaje){
   const input = $('#'+inputId);
   if(!input) return;
-  input.classList.add('campo-error');
-  let ayuda = input.nextElementSibling;
+  // un checkbox no tiene un "borde" que poner en rojo de forma natural — el
+  // mensaje de ayuda se ancla a su <label> (el checkbox + su texto) en vez
+  // del input suelto, para no insertarse a la mitad de esa fila.
+  const ancla = input.type === 'checkbox' ? input.closest('label') : input;
+  ancla.classList.add('campo-error');
+  let ayuda = ancla.nextElementSibling;
   if(!ayuda || !ayuda.classList.contains('campo-ayuda')){
     ayuda = document.createElement('div');
     ayuda.className = 'campo-ayuda';
-    input.insertAdjacentElement('afterend', ayuda);
+    ancla.insertAdjacentElement('afterend', ayuda);
   }
   ayuda.textContent = mensaje;
 }
 function limpiarError(inputId){
   const input = $('#'+inputId);
   if(!input) return;
-  input.classList.remove('campo-error');
-  const ayuda = input.nextElementSibling;
+  const ancla = input.type === 'checkbox' ? input.closest('label') : input;
+  ancla.classList.remove('campo-error');
+  const ayuda = ancla.nextElementSibling;
   if(ayuda && ayuda.classList.contains('campo-ayuda')) ayuda.remove();
 }
 function limpiarErrores(...ids){ ids.forEach(limpiarError); }
@@ -997,21 +1014,23 @@ function verModo(modo){
   $('#modo-login').style.display    = modo==='login' ? 'block' : 'none';
   $('#modo-registro').style.display = modo==='registro' ? 'block' : 'none';
   $('#auth-msg').className = 'auth-msg';
-  limpiarErrores('li-email','li-pass','re-email','re-pass');
+  limpiarErrores('li-email','li-pass','re-email','re-pass','re-acepto');
 }
 
 /* ============================================================
    AUTENTICACIÓN
    ============================================================ */
 async function uiRegistro(){
-  limpiarErrores('re-email','re-pass');
+  limpiarErrores('re-email','re-pass','re-acepto');
   const email = $('#re-email').value.trim();
   const pass  = $('#re-pass').value;
+  const acepto = $('#re-acepto').checked;
   let ok = true;
   if(!email){ marcarError('re-email','Escribe tu correo.'); ok = false; }
   else if(!REGEX_EMAIL.test(email)){ marcarError('re-email','Ese correo no se ve válido.'); ok = false; }
   if(!pass){ marcarError('re-pass','Escribe una contraseña.'); ok = false; }
   else if(pass.length < 6){ marcarError('re-pass','Debe tener al menos 6 caracteres.'); ok = false; }
+  if(!acepto){ marcarError('re-acepto','Debes aceptar los términos y la política de privacidad.'); ok = false; }
   if(!ok) return;
   mostrarCarga('Creando tu cuenta…');
   try{
@@ -1608,6 +1627,14 @@ function irConfig(){
           href="mailto:willirock0403@gmail.com?subject=${encodeURIComponent('Soporte VentaFácil — ' + ESTADO.negocio.nombre)}">
           ${icono('ayuda',16)} Contactar soporte
         </a>
+      </div>
+
+      <div class="config-item">
+        <div class="lbl">Legal</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a class="iconbtn" style="width:auto;padding:9px 14px;text-decoration:none;color:var(--tinta)" href="/terminos.html" target="_blank" rel="noopener">Términos y Condiciones</a>
+          <a class="iconbtn" style="width:auto;padding:9px 14px;text-decoration:none;color:var(--tinta)" href="/privacidad.html" target="_blank" rel="noopener">Política de Privacidad</a>
+        </div>
       </div>
     </div>`;
 }
