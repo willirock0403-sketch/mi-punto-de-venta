@@ -35,6 +35,23 @@ create table if not exists public.folios (
   primary key (negocio_id, fecha)
 );
 
+-- Cortes de caja (arqueo): al cerrar el día se cuenta el efectivo físico y
+-- se compara contra lo que debería haber (fondo inicial + ventas en
+-- efectivo). Guarda la diferencia para poder rastrear faltantes.
+create table if not exists public.cortes_caja (
+  id uuid primary key default gen_random_uuid(),
+  negocio_id uuid not null references public.negocios(id) on delete cascade,
+  fecha date not null,
+  fondo_inicial numeric not null default 0,
+  ventas_efectivo numeric not null default 0,
+  esperado numeric not null default 0,
+  contado numeric not null default 0,
+  diferencia numeric not null default 0,
+  num_ventas integer not null default 0,
+  notas text,
+  creado_en timestamptz not null default now()
+);
+
 -- Empleados: solo sirven para anotar quién atendió una venta en el historial.
 -- No tienen su propio inicio de sesión ni permisos — el dueño sigue siendo
 -- el único que entra a la app con su correo y contraseña.
@@ -52,6 +69,7 @@ alter table public.productos enable row level security;
 alter table public.ventas    enable row level security;
 alter table public.empleados enable row level security;
 alter table public.folios    enable row level security;
+alter table public.cortes_caja enable row level security;
 
 -- 3) NEGOCIOS: cada quien solo ve y edita el suyo
 drop policy if exists "negocios_select_propio" on public.negocios;
@@ -141,6 +159,33 @@ create policy "folios_update_propio" on public.folios
     exists (select 1 from public.negocios n where n.id = folios.negocio_id and n.dueno = auth.uid())
   ) with check (
     exists (select 1 from public.negocios n where n.id = folios.negocio_id and n.dueno = auth.uid())
+  );
+
+-- 4.3) CORTES DE CAJA: mismo patrón que el resto
+drop policy if exists "cortes_select_propio" on public.cortes_caja;
+create policy "cortes_select_propio" on public.cortes_caja
+  for select using (
+    exists (select 1 from public.negocios n where n.id = cortes_caja.negocio_id and n.dueno = auth.uid())
+  );
+
+drop policy if exists "cortes_insert_propio" on public.cortes_caja;
+create policy "cortes_insert_propio" on public.cortes_caja
+  for insert with check (
+    exists (select 1 from public.negocios n where n.id = cortes_caja.negocio_id and n.dueno = auth.uid())
+  );
+
+drop policy if exists "cortes_update_propio" on public.cortes_caja;
+create policy "cortes_update_propio" on public.cortes_caja
+  for update using (
+    exists (select 1 from public.negocios n where n.id = cortes_caja.negocio_id and n.dueno = auth.uid())
+  ) with check (
+    exists (select 1 from public.negocios n where n.id = cortes_caja.negocio_id and n.dueno = auth.uid())
+  );
+
+drop policy if exists "cortes_delete_propio" on public.cortes_caja;
+create policy "cortes_delete_propio" on public.cortes_caja
+  for delete using (
+    exists (select 1 from public.negocios n where n.id = cortes_caja.negocio_id and n.dueno = auth.uid())
   );
 
 -- 5) VENTAS: solo del negocio del usuario autenticado
@@ -248,6 +293,10 @@ create index if not exists idx_productos_negocio_activo_orden
 -- pantalla de cobro y ajustes: empleados activos de un negocio, por nombre
 create index if not exists idx_empleados_negocio_activo
   on public.empleados(negocio_id, activo);
+
+-- corte de caja: el del día de un negocio
+create index if not exists idx_cortes_negocio_fecha
+  on public.cortes_caja(negocio_id, fecha);
 
 -- historial y cortes: ventas de un negocio, por rango de fecha
 create index if not exists idx_ventas_negocio_creado
