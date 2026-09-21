@@ -23,11 +23,24 @@ alter table public.productos add column if not exists stock integer;
 alter table public.ventas    add column if not exists anulada    boolean not null default false;
 alter table public.ventas    add column if not exists anulada_en timestamptz;
 alter table public.ventas    add column if not exists metodo_pago text not null default 'efectivo';
+alter table public.ventas    add column if not exists empleado_nombre text;
+
+-- Empleados: solo sirven para anotar quién atendió una venta en el historial.
+-- No tienen su propio inicio de sesión ni permisos — el dueño sigue siendo
+-- el único que entra a la app con su correo y contraseña.
+create table if not exists public.empleados (
+  id uuid primary key default gen_random_uuid(),
+  negocio_id uuid not null references public.negocios(id) on delete cascade,
+  nombre text not null,
+  activo boolean not null default true,
+  creado_en timestamptz not null default now()
+);
 
 -- 2) Activar RLS en las tablas del negocio
 alter table public.negocios  enable row level security;
 alter table public.productos enable row level security;
 alter table public.ventas    enable row level security;
+alter table public.empleados enable row level security;
 
 -- 3) NEGOCIOS: cada quien solo ve y edita el suyo
 drop policy if exists "negocios_select_propio" on public.negocios;
@@ -67,6 +80,33 @@ drop policy if exists "productos_delete_propio" on public.productos;
 create policy "productos_delete_propio" on public.productos
   for delete using (
     exists (select 1 from public.negocios n where n.id = productos.negocio_id and n.dueno = auth.uid())
+  );
+
+-- 4.1) EMPLEADOS: solo del negocio del usuario autenticado (mismo patrón que productos)
+drop policy if exists "empleados_select_propio" on public.empleados;
+create policy "empleados_select_propio" on public.empleados
+  for select using (
+    exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
+  );
+
+drop policy if exists "empleados_insert_propio" on public.empleados;
+create policy "empleados_insert_propio" on public.empleados
+  for insert with check (
+    exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
+  );
+
+drop policy if exists "empleados_update_propio" on public.empleados;
+create policy "empleados_update_propio" on public.empleados
+  for update using (
+    exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
+  ) with check (
+    exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
+  );
+
+drop policy if exists "empleados_delete_propio" on public.empleados;
+create policy "empleados_delete_propio" on public.empleados
+  for delete using (
+    exists (select 1 from public.negocios n where n.id = empleados.negocio_id and n.dueno = auth.uid())
   );
 
 -- 5) VENTAS: solo del negocio del usuario autenticado
@@ -171,6 +211,10 @@ create unique index if not exists ux_negocios_dueno on public.negocios(dueno);
 create index if not exists idx_productos_negocio_activo_orden
   on public.productos(negocio_id, activo, orden);
 
+-- pantalla de cobro y ajustes: empleados activos de un negocio, por nombre
+create index if not exists idx_empleados_negocio_activo
+  on public.empleados(negocio_id, activo);
+
 -- historial y cortes: ventas de un negocio, por rango de fecha
 create index if not exists idx_ventas_negocio_creado
   on public.ventas(negocio_id, creado_en);
@@ -187,6 +231,10 @@ exception when duplicate_object then null; end $$;
 
 do $$ begin
   alter table public.productos add constraint productos_nombre_longitud check (char_length(trim(nombre)) between 1 and 120);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.empleados add constraint empleados_nombre_longitud check (char_length(trim(nombre)) between 1 and 60);
 exception when duplicate_object then null; end $$;
 
 do $$ begin

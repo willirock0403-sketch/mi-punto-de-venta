@@ -826,6 +826,7 @@ let ESTADO = {
   usuario: null,
   negocio: null,       // {id, nombre, logo_url, color, plan}
   productos: [],       // [{id, nombre, precio, foto_url, orden}]
+  empleados: [],        // [{id, nombre}] — solo para atribuir quién atendió cada venta
   carro: {},           // {producto_id: cantidad}
   recibido: 0,
   ultimaVenta: null,
@@ -914,7 +915,7 @@ async function uiLogin(){
 async function uiLogout(){
   mostrarCarga('Saliendo…');
   await sb.auth.signOut();
-  ESTADO = { usuario:null, negocio:null, productos:[], carro:{}, recibido:0, ultimaVenta:null };
+  ESTADO = { usuario:null, negocio:null, productos:[], empleados:[], carro:{}, recibido:0, ultimaVenta:null };
   ocultarCarga();
   verModo('login');
   verPantalla('p-auth');
@@ -1001,6 +1002,10 @@ async function cargarDatos(){
     .select('*').eq('negocio_id', ESTADO.negocio.id).eq('activo', true)
     .order('orden', {ascending:true});
   ESTADO.productos = prods || [];
+  const { data: emps } = await sb.from('empleados')
+    .select('*').eq('negocio_id', ESTADO.negocio.id).eq('activo', true)
+    .order('nombre', {ascending:true});
+  ESTADO.empleados = emps || [];
 }
 
 function entrarApp(){
@@ -1146,6 +1151,12 @@ const METODOS_PAGO = [
 function irPago(){
   ESTADO.recibido = 0;
   ESTADO.metodoPago = 'efectivo';
+  ESTADO.empleadoSeleccionado = null;
+  pintarPago();
+}
+
+function elegirEmpleadoPorIndice(i){
+  ESTADO.empleadoSeleccionado = i===0 ? null : ESTADO.empleados[i-1].nombre;
   pintarPago();
 }
 
@@ -1170,6 +1181,13 @@ function pintarPago(){
   const chipsMetodo = `<div class="cat-chips">${METODOS_PAGO.map(m=>
     `<button class="cat-chip ${m.id===metodo?'on':''}" onclick="elegirMetodoPago('${m.id}')">${m.n}</button>`
   ).join('')}</div>`;
+
+  const chipsEmpleado = ESTADO.empleados.length ? `
+    <div class="lbl" style="margin-top:14px">Atendió</div>
+    <div class="cat-chips">${['Sin asignar', ...ESTADO.empleados.map(e=>e.nombre)].map((n,i)=>{
+      const val = i===0 ? null : n;
+      return `<button class="cat-chip ${ESTADO.empleadoSeleccionado===val?'on':''}" onclick="elegirEmpleadoPorIndice(${i})">${esc(n)}</button>`;
+    }).join('')}</div>` : '';
 
   let cuerpoPago;
   if(esEfectivo){
@@ -1207,6 +1225,7 @@ function pintarPago(){
         <div class="res-total"><span>TOTAL</span><span class="fiesta">${pesos(total)}</span></div>
       </div>
       ${chipsMetodo}
+      ${chipsEmpleado}
       ${cuerpoPago}
     </div>`;
 }
@@ -1228,12 +1247,13 @@ async function finalizarVenta(){
   mostrarCarga('Guardando venta…');
   try{
     const folio = await siguienteFolio();
+    const empleado_nombre = ESTADO.empleadoSeleccionado || null;
     const { data, error } = await sb.from('ventas').insert([{
       negocio_id: ESTADO.negocio.id,
-      folio, articulos, total, recibido: rec, cambio, metodo_pago: metodo
+      folio, articulos, total, recibido: rec, cambio, metodo_pago: metodo, empleado_nombre
     }]).select();
     if(error) throw error;
-    ESTADO.ultimaVenta = { ...data[0], articulos, total, recibido: rec, cambio, folio, metodo_pago: metodo };
+    ESTADO.ultimaVenta = { ...data[0], articulos, total, recibido: rec, cambio, folio, metodo_pago: metodo, empleado_nombre };
     // descuenta existencias de los productos con control de inventario (stock != null);
     // el resto no lleva conteo y no se toca. Se hace después de guardar la venta para
     // no perder el cobro si esto llegara a fallar.
@@ -1333,7 +1353,7 @@ async function verDetalleDia(fecha){
   const fechaTxt = new Date(a,m-1,d).toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'});
   const filas = ventas.map(v=>{
     const hora = new Date(v.creado_en).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-    const resumen = v.articulos.map(a=>`${a.cant}× ${esc(a.nombre)}`).join(', ');
+    const resumen = v.articulos.map(a=>`${a.cant}× ${esc(a.nombre)}`).join(', ') + (v.empleado_nombre ? ` · ${esc(v.empleado_nombre)}` : '');
     const accion = v.anulada
       ? `<span class="venta-anulada-tag">Anulada</span>`
       : `<button class="iconbtn" style="width:auto;padding:0 12px;background:rgba(220,38,38,.1);color:var(--rojo)" onclick="anularVenta('${v.id}','${fecha}')">Anular</button>`;
@@ -1371,6 +1391,15 @@ function irConfig(){
       </div>
     </div>`;
   }).join('');
+
+  const emps = ESTADO.empleados.map(e => `<div class="prod-fila">
+      <div class="mini" style="display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--relleno-sutil-fuerte);color:var(--tinta)">${esc(e.nombre.charAt(0).toUpperCase())}</div>
+      <div class="info"><div class="n">${esc(e.nombre)}</div></div>
+      <div class="acc">
+        <button class="iconbtn" onclick="modalEditarEmpleado('${e.id}')">✏️</button>
+        <button class="iconbtn del" onclick="borrarEmpleadoUI('${e.id}')">🗑️</button>
+      </div>
+    </div>`).join('');
 
   $('#pos-root').innerHTML = techoHTML() + `
     <div class="cuerpo">
@@ -1424,6 +1453,17 @@ function irConfig(){
           <button class="iconbtn" style="width:auto;padding:6px 12px;background:var(--verde);color:#fff;border-color:var(--verde-osc)" onclick="modalNuevoProducto()">+ Nuevo</button>
         </div>
         <div style="margin-top:10px">${prods || '<p style="color:var(--humo);font-size:14px">Aún no hay productos.</p>'}</div>
+      </div>
+
+      <div class="config-item">
+        <div class="lbl" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Empleados (${ESTADO.empleados.length})</span>
+          <button class="iconbtn" style="width:auto;padding:6px 12px;background:var(--verde);color:#fff;border-color:var(--verde-osc)" onclick="modalNuevoEmpleado()">+ Nuevo</button>
+        </div>
+        <p style="color:var(--humo);font-size:12.5px;margin:6px 0 0">
+          Solo para saber quién atendió cada venta al ver el historial — no crea una cuenta ni un inicio de sesión aparte.
+        </p>
+        <div style="margin-top:10px">${emps || '<p style="color:var(--humo);font-size:14px">Aún no hay empleados registrados.</p>'}</div>
       </div>
     </div>`;
 }
@@ -1589,6 +1629,58 @@ async function borrarProductoUI(id){
   if(!confirm('¿Borrar este producto?')) return;
   mostrarCarga('Borrando…');
   await sb.from('productos').update({activo:false}).eq('id', id);
+  await cargarDatos();
+  ocultarCarga(); irConfig();
+}
+
+/* ---------- MODAL empleados (solo atribución, sin cuenta ni permisos) ---------- */
+function modalNuevoEmpleado(){
+  abrirModal(`
+    <h3 class="fiesta">Nuevo empleado</h3>
+    <div class="campo"><label>Nombre</label><input type="text" id="ne-nombre" placeholder="Ej. Karla" maxlength="60"></div>
+    <div class="fila-btn">
+      <button class="btn-grande secundario" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-grande" onclick="guardarNuevoEmpleado()">Guardar</button>
+    </div>`);
+}
+
+function modalEditarEmpleado(id){
+  const e = ESTADO.empleados.find(x=>x.id===id);
+  abrirModal(`
+    <h3 class="fiesta">Editar empleado</h3>
+    <div class="campo"><label>Nombre</label><input type="text" id="ne-nombre" maxlength="60" value="${esc(e.nombre)}"></div>
+    <div class="fila-btn">
+      <button class="btn-grande secundario" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-grande" onclick="guardarEdicionEmpleado('${id}')">Guardar</button>
+    </div>`);
+}
+
+async function guardarNuevoEmpleado(){
+  const nombre = $('#ne-nombre').value.trim();
+  if(!nombre) return alert('Escribe el nombre del empleado.');
+  mostrarCarga('Guardando…');
+  try{
+    await sb.from('empleados').insert([{negocio_id: ESTADO.negocio.id, nombre}]);
+    await cargarDatos();
+    ocultarCarga(); cerrarModal(); irConfig();
+  }catch(e){ ocultarCarga(); alert('No se pudo guardar.'); }
+}
+
+async function guardarEdicionEmpleado(id){
+  const nombre = $('#ne-nombre').value.trim();
+  if(!nombre) return alert('Escribe el nombre del empleado.');
+  mostrarCarga('Guardando…');
+  try{
+    await sb.from('empleados').update({nombre}).eq('id', id);
+    await cargarDatos();
+    ocultarCarga(); cerrarModal(); irConfig();
+  }catch(e){ ocultarCarga(); alert('No se pudo guardar.'); }
+}
+
+async function borrarEmpleadoUI(id){
+  if(!confirm('¿Borrar este empleado? Las ventas que ya se le atribuyeron conservan su nombre.')) return;
+  mostrarCarga('Borrando…');
+  await sb.from('empleados').update({activo:false}).eq('id', id);
   await cargarDatos();
   ocultarCarga(); irConfig();
 }
