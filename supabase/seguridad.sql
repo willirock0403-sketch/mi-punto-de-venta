@@ -32,6 +32,10 @@ alter table public.ventas    add column if not exists anulada    boolean not nul
 alter table public.ventas    add column if not exists anulada_en timestamptz;
 alter table public.ventas    add column if not exists metodo_pago text not null default 'efectivo';
 alter table public.ventas    add column if not exists empleado_nombre text;
+-- quién cobró, por id de cuenta. El nombre se guarda aparte solo para
+-- imprimirlo en el ticket: los nombres se pueden cambiar y entonces las
+-- ventas viejas dejarían de contar como suyas. El id nunca cambia.
+alter table public.ventas    add column if not exists empleado_uid uuid;
 
 -- Folios: un contador por negocio y por día. Antes el folio se calculaba
 -- contando las ventas del día desde el navegador, lo que podía darle el
