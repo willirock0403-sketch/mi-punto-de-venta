@@ -3026,13 +3026,15 @@ function _encabezado(d, W, alto, color, logoData){
 }
 
 /* ---------- TICKET (80mm) ---------- */
-async function generarTicket(v){
-  const color = _colorAcento();
-  const logo = await _logoData();
-  const W = 80, FILA = 7;
-  const alto = 40 + v.articulos.length*FILA;
-  const d = _doc([W, alto]);
+const FILA_TICKET = 7;   // alto mínimo de un renglón de producto, en mm
 
+/* Dibuja el ticket y devuelve la altura que ocupó.
+   El alto de la hoja NO se puede adivinar con una fórmula: basta con que
+   un producto tenga nombre largo (y ocupe dos renglones) para que la
+   cuenta se quede corta y el PDF salga cortado a media lista. Por eso se
+   pinta primero en una hoja de sobra solo para medir, y luego se pinta en
+   una hoja del alto exacto. */
+function _pintarTicket(d, v, W, color, logo){
   let y = _encabezado(d, W, 24, color, logo);
 
   // folio y fecha
@@ -3041,19 +3043,30 @@ async function generarTicket(v){
   d.text('Folio: '+(v.folio||'—'), 5, y+4);
   d.text(fecha.toLocaleString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}), W-5, y+4, {align:'right'});
   y += 8;
+
+  // quién cobró, igual que en el ticket de la impresora térmica
+  if(v.empleado_nombre){
+    _reg(d, 8.5); _tint(d, _GRIS);
+    d.text('Atendió: ' + v.empleado_nombre, 5, y+3.5);
+    y += 5.5;
+  }
   _draw(d,_LINEA); d.setLineWidth(.3); d.line(5,y,W-5,y); y+=5;
 
   // artículos
   _bold(d,9); _tint(d,_T);
   d.text('PRODUCTO', 5, y); d.text('CANT', W-28, y, {align:'right'}); d.text('IMPORTE', W-5, y, {align:'right'});
   y += 2; _draw(d,_LINEA); d.line(5,y,W-5,y); y+=5;
+  const anchoNombre = W - 5 - 33;   // hasta donde empieza la columna CANT
   v.articulos.forEach(a=>{
     _reg(d,9.5); _tint(d,_T);
-    d.text(a.nombre.slice(0,24), 5, y);
+    // los nombres largos se parten en renglones en vez de recortarse: antes
+    // "Chicharrón preparado con salsa" salía mocho en el ticket del cliente
+    const lineas = d.splitTextToSize(String(a.nombre||''), anchoNombre);
+    d.text(lineas, 5, y);
     d.text(String(a.cant), W-28, y, {align:'right'});
     _bold(d,9.5);
     d.text(pesos(a.cant*a.precio), W-5, y, {align:'right'});
-    y += FILA;
+    y += Math.max(FILA_TICKET, lineas.length * 4.6 + 2.4);
   });
 
   y += 1; _draw(d,_T); d.setLineWidth(.5); d.line(5,y,W-5,y); y+=6;
@@ -3065,12 +3078,20 @@ async function generarTicket(v){
   d.text(pesos(v.total), W-9, y+6.7, {align:'right'});
   y += 14;
 
-  // recibido / cambio
-  if(v.recibido!=null){
+  // recibido y cambio solo tienen sentido cobrando en efectivo: en tarjeta o
+  // transferencia salía "Recibido $70 / Cambio $0", que no le dice nada al
+  // cliente. Ahí va el método de pago, igual que en el ticket de la térmica.
+  const metodo = v.metodo_pago || 'efectivo';
+  if(metodo === 'efectivo' && v.recibido != null){
     _reg(d,9.5); _tint(d,_GRIS);
     d.text('Recibido:', 5, y); _bold(d,9.5); _tint(d,_T); d.text(pesos(v.recibido), W-5, y, {align:'right'}); y+=5.5;
     _reg(d,9.5); _tint(d,_GRIS);
     d.text('Cambio:', 5, y); _bold(d,10); _tint(d,color); d.text(pesos(v.cambio), W-5, y, {align:'right'}); y+=8;
+  } else {
+    _reg(d,9.5); _tint(d,_GRIS);
+    d.text('Pago:', 5, y);
+    _bold(d,9.5); _tint(d,_T);
+    d.text((METODOS_PAGO.find(m=>m.id===metodo)||{}).n || metodo, W-5, y, {align:'right'}); y+=8;
   }
 
   _reg(d,9); _tint(d,_GRIS);
@@ -3078,6 +3099,21 @@ async function generarTicket(v){
   _reg(d,6.5); _tint(d,[180,180,180]);
   d.text('Punto de venta en la nube', W/2, y, {align:'center'});
 
+  return y + 5;   // un respiro abajo, como el margen de un rollo de verdad
+}
+
+async function generarTicket(v){
+  const color = _colorAcento();
+  const logo = await _logoData();
+  const W = 80;
+
+  // 1) se pinta en una hoja larga, solo para saber cuánto mide
+  const regla = _doc([W, 600]);
+  const alto = _pintarTicket(regla, v, W, color, logo);
+
+  // 2) se pinta de verdad, ya con el alto exacto
+  const d = _doc([W, Math.max(alto, 60)]);
+  _pintarTicket(d, v, W, color, logo);
   return d;
 }
 
