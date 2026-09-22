@@ -1047,6 +1047,7 @@ const ICONOS = {
   pausa:    '<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>',
   chispas:  '<path d="M12 3.3l1.3 3.8L17 8.4l-3.7 1.3L12 13.6l-1.3-3.9L7 8.4l3.7-1.3L12 3.3z"/><path d="M19 14.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"/><path d="M5.2 14.8l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/>',
   ayuda:    '<circle cx="12" cy="12" r="9"/><path d="M9.3 9.2a2.7 2.7 0 1 1 4 2.4c-.7.4-1.3 1-1.3 1.8v.3"/><circle cx="12" cy="16.3" r=".9" fill="currentColor" stroke="none"/>',
+  casa:     '<path d="M3.6 10.4 12 3.8l8.4 6.6"/><path d="M5.6 12v7.4a.8.8 0 0 0 .8.8h11.2a.8.8 0 0 0 .8-.8V12"/><path d="M9.8 20.2v-5.4h4.4v5.4"/>',
   caja:     '<path d="M3.2 8.6h17.6v10.2a1 1 0 0 1-1 1H4.2a1 1 0 0 1-1-1V8.6z"/><path d="M4.6 8.6l1.7-3.5a1 1 0 0 1 .9-.6h9.6a1 1 0 0 1 .9.6l1.7 3.5"/><path d="M9.6 12.6h4.8"/>',
   impresora:'<path d="M7 9V4.2a.8.8 0 0 1 .8-.8h8.4a.8.8 0 0 1 .8.8V9"/><path d="M6.2 9h11.6a2.3 2.3 0 0 1 2.3 2.3v4.4a.8.8 0 0 1-.8.8H17v3.3a.8.8 0 0 1-.8.8H7.8a.8.8 0 0 1-.8-.8V16.5H4.7a.8.8 0 0 1-.8-.8v-4.4A2.3 2.3 0 0 1 6.2 9z"/><path d="M9.6 17.4h4.8"/>',
 };
@@ -1359,11 +1360,16 @@ async function determinarRol(){
     ESTADO.miNombre = correo.split('@')[0] || 'Empleado';
   }
   try{
-    const { data } = await sb.from('empleados').select('*')
-      .eq('usuario_id', ESTADO.usuario.id).limit(1);
+    // Se busca la ficha por id de cuenta O por correo: en el PRIMER login,
+    // el ligado acaba de ocurrir y la consulta podría no ver todavía el
+    // usuario_id. Sin esto, esa primera sesión trabajaba con el nombre de
+    // respaldo (el correo sin @) y sus ventas quedaban firmadas distinto.
+    const { data } = await sb.from('empleados').select('*');
     // se verifica que la fila sea de verdad la mía: RLS deja ver a todo el
     // equipo, así que una fila cualquiera NO es prueba de quién soy
-    const yo = (data || []).find(e => e.usuario_id === ESTADO.usuario.id);
+    const mio = correo.trim().toLowerCase();
+    const yo = (data || []).find(e => e.usuario_id === ESTADO.usuario.id)
+            || (data || []).find(e => (e.email || '').toLowerCase() === mio && mio);
     if(yo){
       // el dueño sigue siendo admin aunque su ficha diga otra cosa
       if(ESTADO.negocio.dueno !== ESTADO.usuario.id) ESTADO.rol = yo.rol || 'empleado';
@@ -1513,7 +1519,11 @@ async function irInicio(){
         <div class="ch-sub">${numHoy} ${numHoy===1?'venta':'ventas'}</div>
       </div>`;
   } else {
-    const mias = ventasHoy.filter(v => v.empleado_nombre === ESTADO.miNombre).length;
+    // se cuenta por id de cuenta; el nombre solo sirve de respaldo para las
+    // ventas hechas antes de que existiera esa columna
+    const mias = ventasHoy.filter(v => v.empleado_uid
+      ? v.empleado_uid === ESTADO.usuario.id
+      : v.empleado_nombre === ESTADO.miNombre).length;
     encabezado = `
       <div class="corte-hoy">
         <div class="ch-lbl fiesta">HOLA, ${esc((ESTADO.miNombre||'').toUpperCase())}</div>
@@ -1716,6 +1726,7 @@ async function finalizarVenta(btn){
   }));
 
   const empleado_nombre = ESTADO.miNombre || null;
+  const empleado_uid = ESTADO.usuario ? ESTADO.usuario.id : null;
   // productos de esta venta que llevan control de inventario (stock != null);
   // el resto no lleva conteo y no se toca
   const descuentos = ESTADO.productos
@@ -1723,7 +1734,7 @@ async function finalizarVenta(btn){
     .map(p => ({ id: p.id, cant: ESTADO.carro[p.id] }));
   const base = {
     negocio_id: ESTADO.negocio.id,
-    articulos, total, recibido: rec, cambio, metodo_pago: metodo, empleado_nombre
+    articulos, total, recibido: rec, cambio, metodo_pago: metodo, empleado_nombre, empleado_uid
   };
 
   const restaurar = botonCargando(btn, 'Guardando venta…');
@@ -1811,9 +1822,14 @@ function pintarCambio(cambio, metodo){
       <button class="mini-btn" style="width:100%;margin-top:9px;padding:11px" onclick="guardarTicket()">
         ${icono('boleto',15)} Guardar ticket en PDF
       </button>
-      <button class="mega verde" style="margin-top:10px" onclick="nuevaVentaLimpia()">
-        <span class="mega-ic">${icono('mas',18)}</span> Nueva venta
-      </button>
+      <div class="fila-btn" style="display:flex;gap:10px;margin-top:10px">
+        <button class="mega crema" style="flex:0 0 40%" onclick="volverAInicio()">
+          <span class="mega-ic">${icono('casa',18)}</span> Inicio
+        </button>
+        <button class="mega verde" style="flex:1" onclick="nuevaVentaLimpia()">
+          <span class="mega-ic">${icono('mas',18)}</span> Nueva venta
+        </button>
+      </div>
     </div>`;
 }
 
@@ -1823,7 +1839,15 @@ function desglosaCambio(monto){
   return out;
 }
 
+/* Tras cobrar, lo que casi siempre sigue es cobrar otra vez: este botón
+   lleva DIRECTO a la pantalla de venta. Antes pasaba por Inicio y había
+   que volver a picarle a "Nueva venta" para empezar a vender. */
 function nuevaVentaLimpia(){
+  ESTADO.carro = {}; ESTADO.recibido = 0;
+  irVenta();
+}
+
+function volverAInicio(){
   ESTADO.carro = {}; ESTADO.recibido = 0;
   irInicio();
 }
