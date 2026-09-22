@@ -1063,7 +1063,26 @@ const pesos = n => '$' + Number(n).toLocaleString('es-MX', {maximumFractionDigit
    nombre y ejecutarlo cada vez que se muestre) */
 const ESC_MAP = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
-const hoyLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+/* ---------- FECHAS ----------
+   La base guarda la hora en UTC. Si el día se arma como texto plano
+   ("2026-09-21T00:00:00"), Postgres lo lee COMO UTC y la ventana queda
+   corrida: en México (UTC-6) el "día" iba de las 6 de la tarde de ayer a
+   las 5:59 de la tarde de hoy, así que todo lo cobrado de noche se caía
+   del corte, del historial y del contador del empleado.
+   Por eso el día se arma siempre con Date local y se manda como instante
+   exacto (toISOString), y la fecha de una venta se saca de su hora local,
+   no de los primeros 10 caracteres del texto en UTC. */
+const fechaLocalDe = (ts) => {
+  const d = ts instanceof Date ? ts : new Date(ts);
+  if(isNaN(d)) return '';
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
+const hoyLocal = () => fechaLocalDe(new Date());
+// inicio del día local, como instante exacto
+const desdeISO = (fecha) => { const [a,m,d] = fecha.split('-').map(Number); return new Date(a, m-1, d, 0, 0, 0, 0).toISOString(); };
+// inicio del día SIGUIENTE: el rango se consulta con "menor que", así no hay
+// hueco en el último milisegundo ni se cuela la primera venta del otro día
+const hastaISO = (fecha) => { const [a,m,d] = fecha.split('-').map(Number); return new Date(a, m-1, d+1, 0, 0, 0, 0).toISOString(); };
 
 function verPantalla(id){
   document.querySelectorAll('.pantalla').forEach(p => p.classList.remove('activa'));
@@ -1278,11 +1297,11 @@ function agregarVentaACacheDia(venta){
 function ventasPendientes(){ return ESTADO.negocio ? lsLeer(LS_PEND(ESTADO.negocio.id), []) : []; }
 function guardarPendientes(lista){ if(ESTADO.negocio) lsGuardar(LS_PEND(ESTADO.negocio.id), lista); }
 function pendientesDeDia(fecha){
-  return ventasPendientes().filter(v => (v.creado_en||'').slice(0,10) === fecha);
+  return ventasPendientes().filter(v => fechaLocalDe(v.creado_en) === fecha);
 }
 function pendientesEnRango(desde, hasta){
   return ventasPendientes().filter(v => {
-    const f = (v.creado_en||'').slice(0,10);
+    const f = fechaLocalDe(v.creado_en);
     return f >= desde && f <= hasta;
   });
 }
@@ -1861,8 +1880,8 @@ async function obtenerVentasDia(fecha){
   try{
     const r = await sb.from('ventas')
       .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
-      .gte('creado_en', `${fecha}T00:00:00`)
-      .lte('creado_en', `${fecha}T23:59:59.999`)
+      .gte('creado_en', desdeISO(fecha))
+      .lt('creado_en', hastaISO(fecha))
       .order('creado_en', {ascending:true});
     if(r.error) throw r.error;
     data = r.data || [];
@@ -1884,8 +1903,8 @@ async function obtenerVentasDiaCompleto(fecha){
   try{
     const r = await sb.from('ventas')
       .select('*').eq('negocio_id', ESTADO.negocio.id)
-      .gte('creado_en', `${fecha}T00:00:00`)
-      .lte('creado_en', `${fecha}T23:59:59.999`)
+      .gte('creado_en', desdeISO(fecha))
+      .lt('creado_en', hastaISO(fecha))
       .order('creado_en', {ascending:true});
     if(r.error) throw r.error;
     data = r.data || [];
@@ -2445,8 +2464,8 @@ async function obtenerVentasRango(desde, hasta){
   try{
     const r = await sb.from('ventas')
       .select('*').eq('negocio_id', ESTADO.negocio.id).eq('anulada', false)
-      .gte('creado_en', `${desde}T00:00:00`)
-      .lte('creado_en', `${hasta}T23:59:59.999`)
+      .gte('creado_en', desdeISO(desde))
+      .lt('creado_en', hastaISO(hasta))
       .order('creado_en', {ascending:true});
     if(r.error) throw r.error;
     data = r.data || [];
@@ -2718,7 +2737,7 @@ function ventasUltimos7(ventas){
   const porClave = {};
   dias.forEach(d => porClave[d.clave] = d);
   ventas.forEach(v => {
-    const f = (v.creado_en||'').slice(0,10);
+    const f = fechaLocalDe(v.creado_en);
     if(porClave[f]) porClave[f].valor += Number(v.total);
   });
   return dias;
@@ -2751,7 +2770,7 @@ function dashboardHTML(ventas){
   const conVenta = dias.filter(d=>d.valor>0).length;
   const promedio = conVenta ? semana / conVenta : 0;
   const mejor = dias.reduce((m,d)=> d.valor > m.valor ? d : m, dias[0]);
-  const horas = ventasPorHora(ventas.filter(v => dias.some(d => d.clave === (v.creado_en||'').slice(0,10))));
+  const horas = ventasPorHora(ventas.filter(v => dias.some(d => d.clave === fechaLocalDe(v.creado_en))));
   const horaPico = horas.reduce((m,h)=> !m || h.valor > m.valor ? h : m, null);
 
   return `
@@ -2807,7 +2826,7 @@ async function irHistorial(){
   // agrupar por día
   const porDia = {};
   (ventas||[]).forEach(v=>{
-    const f = v.creado_en.slice(0,10);
+    const f = fechaLocalDe(v.creado_en);
     (porDia[f] = porDia[f] || []).push(v);
   });
   const dias = Object.keys(porDia).sort().reverse();
