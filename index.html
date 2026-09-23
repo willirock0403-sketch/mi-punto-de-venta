@@ -1282,6 +1282,18 @@ function lsGuardar(clave, valor){
   try{ localStorage.setItem(clave, JSON.stringify(valor)); }catch(e){}
 }
 
+/* Deja grabado en este dispositivo que la cuenta quedó suspendida, sin
+   tocar el catálogo guardado. Si no, bastaba con poner el celular en modo
+   avión para seguir usando la app: el arranque sin internet lee el caché,
+   y ahí el negocio seguía marcado como activo para siempre, porque la
+   pantalla de suspendido corta antes de que el caché se vuelva a guardar. */
+function marcarCacheSuspendido(uid){
+  const cache = lsLeer(LS_CACHE(uid), null);
+  if(!cache || !cache.negocio) return;
+  cache.negocio.activo = false;
+  lsGuardar(LS_CACHE(uid), cache);
+}
+
 function guardarCacheNegocio(){
   if(!ESTADO.usuario || !ESTADO.negocio) return;
   lsGuardar(LS_CACHE(ESTADO.usuario.id), {
@@ -1440,6 +1452,7 @@ async function arrancar(){
       await determinarRol();
       aplicarTema(ESTADO.negocio.color);
       if(ESTADO.negocio.activo === false){
+        marcarCacheSuspendido(user.id);
         ocultarCarga();
         verPantalla('p-suspendido');
         return;
@@ -1459,6 +1472,11 @@ async function arrancar(){
       ESTADO.rol = cache.rol || 'admin';
       ESTADO.miNombre = cache.miNombre || '';
       aplicarTema(ESTADO.negocio.color);
+      if(ESTADO.negocio.activo === false){
+        ocultarCarga();
+        verPantalla('p-suspendido');
+        return;
+      }
     }
 
     ocultarCarga();
