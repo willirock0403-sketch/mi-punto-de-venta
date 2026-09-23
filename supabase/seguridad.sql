@@ -157,6 +157,52 @@ drop policy if exists "negocios_update_propio" on public.negocios;
 create policy "negocios_update_propio" on public.negocios
   for update using (public.es_admin(id)) with check (public.es_admin(id));
 
+-- 4b) EL INTERRUPTOR DEL COBRO NO ES DEL CLIENTE
+--    La política de arriba deja al dueño editar SU negocio, que es lo
+--    correcto para el nombre, el logo o el color. Pero "activo" no es un
+--    ajuste del negocio: es el interruptor con el que TÚ cortas el servicio
+--    a quien no ha pagado. Sin esto, un cliente suspendido podía volver a
+--    prenderse solo llamando a la API con su propia sesión:
+--      supabase.from('negocios').update({activo:true}).eq('id', suNegocio)
+--    y la política se lo permitía, porque sigue siendo admin de su negocio.
+--    Lo mismo con "dueno": regalar o robar un negocio entero cambiando esa
+--    columna.
+--
+--    El candado va en un disparador y no en la política, porque las
+--    políticas de Postgres no distinguen QUÉ columna se está cambiando.
+--    Se bloquea solo lo que entra por la API como usuario con sesión
+--    (authenticated/anon). El Table Editor y el SQL Editor de Supabase
+--    entran con un rol privilegiado, así que tú sigues pudiendo prender y
+--    apagar cuentas desde ahí, igual que siempre.
+create or replace function public.proteger_interruptor()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- no viene de la API con sesión de usuario: es el panel de Supabase o
+  -- la llave de servicio. Pasa.
+  if current_user not in ('authenticated', 'anon') then
+    return new;
+  end if;
+  if new.activo is distinct from old.activo then
+    raise exception 'El estado de la cuenta solo lo cambia el administrador de la app.'
+      using errcode = '42501';
+  end if;
+  if new.dueno is distinct from old.dueno then
+    raise exception 'El dueño de la cuenta no se puede cambiar desde la app.'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_proteger_interruptor on public.negocios;
+create trigger trg_proteger_interruptor
+  before update on public.negocios
+  for each row execute function public.proteger_interruptor();
+
 -- 5) PRODUCTOS: el empleado los ve para poder cobrar, pero no los toca
 drop policy if exists "productos_select_propio" on public.productos;
 create policy "productos_select_propio" on public.productos
@@ -309,10 +355,20 @@ create policy "productos_fotos_actualiza_propia" on storage.objects
   );
 
 -- ============================================================
--- CÓMO ACTIVAR/DESACTIVAR UN NEGOCIO MANUALMENTE (para el cobro):
+-- CÓMO ACTIVAR/DESACTIVAR UN NEGOCIO (para el cobro)
+--
+-- Desde Supabase → SQL Editor (o Table Editor → negocios → columna
+-- "activo", que es un simple sí/no):
 --   update public.negocios set activo = false where id = 'ID-DEL-NEGOCIO';
 --   update public.negocios set activo = true  where id = 'ID-DEL-NEGOCIO';
--- El id de cada negocio lo ves en Table Editor → negocios.
+--
+-- Para ver de un vistazo quién está prendido y quién apagado:
+--   select id, nombre, activo from public.negocios
+--   order by activo, nombre;
+--
+-- Apagar una cuenta NO borra nada: sus ventas, productos y empleados
+-- siguen ahí. Solo deja de poder entrar, y con volver a prenderla
+-- recupera todo tal cual.
 -- ============================================================
 
 
