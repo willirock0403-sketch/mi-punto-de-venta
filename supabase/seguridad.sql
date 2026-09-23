@@ -37,6 +37,15 @@ alter table public.ventas    add column if not exists empleado_nombre text;
 -- ventas viejas dejarían de contar como suyas. El id nunca cambia.
 alter table public.ventas    add column if not exists empleado_uid uuid;
 
+-- Llave que el aparato le pone a cada venta ANTES de mandarla. Si el
+-- servidor la guarda y la señal se cae justo antes de que llegue la
+-- confirmación, la app cree que falló, la encola y la vuelve a subir.
+-- El índice único de abajo hace que ese segundo intento choque, y la app
+-- lo toma como "ya estaba guardada" en vez de cobrarla dos veces.
+alter table public.ventas    add column if not exists clave_cliente uuid;
+create unique index if not exists ux_ventas_clave_cliente
+  on public.ventas(clave_cliente) where clave_cliente is not null;
+
 -- Folios: un contador por negocio y por día. Antes el folio se calculaba
 -- contando las ventas del día desde el navegador, lo que podía darle el
 -- MISMO folio a dos dispositivos cobrando al mismo tiempo.

@@ -1334,6 +1334,10 @@ function pendientesEnRango(desde, hasta){
    arrancar y cuando el navegador avisa que volvió la conexión; también
    se puede forzar tocando el aviso del encabezado. */
 let _sincronizando = false;
+function esLlaveRepetida(error){
+  return !!error && (error.code === '23505' || /duplicate key|clave_cliente/i.test(error.message || ''));
+}
+
 async function sincronizarPendientes(silencioso = true){
   if(_sincronizando || !ESTADO.negocio) return;
   const cola = ventasPendientes();
@@ -1348,9 +1352,14 @@ async function sincronizarPendientes(silencioso = true){
     try{
       const { _descuentos, pendiente, ...venta } = v;
       const { error } = await sb.from('ventas').insert([venta]);
-      if(error) throw error;
-      for(const d of (_descuentos||[])){
-        await sb.rpc('descontar_stock', { p_producto_id: d.id, p_cantidad: d.cant });
+      // 23505 = llave repetida: esta venta YA estaba guardada en la nube.
+      // Pasó por el servidor y solo se perdió la respuesta. Se saca de la
+      // cola como subida; reintentarla sería cobrarla dos veces.
+      if(error && !esLlaveRepetida(error)) throw error;
+      if(!error){
+        for(const d of (_descuentos||[])){
+          await sb.rpc('descontar_stock', { p_producto_id: d.id, p_cantidad: d.cant });
+        }
       }
     }catch(e){ console.error(e); quedan.push(v); }
   }
@@ -1764,6 +1773,16 @@ function addRec(n){ ESTADO.recibido += n; pintarPago(); }
 function pagoJusto(){ ESTADO.recibido = totalCarro(); pintarPago(); }
 function borraRec(){ ESTADO.recibido = 0; pintarPago(); }
 
+/* Identificador único de una venta, generado en este aparato. */
+function claveDeVenta(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  // respaldo para navegadores viejos o páginas sin contexto seguro
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random()*16|0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 /* ---------- FINALIZAR (guarda en la nube) ---------- */
 async function finalizarVenta(btn){
   const total = totalCarro();
@@ -1783,7 +1802,13 @@ async function finalizarVenta(btn){
     .map(p => ({ id: p.id, cant: ESTADO.carro[p.id] }));
   const base = {
     negocio_id: ESTADO.negocio.id,
-    articulos, total, recibido: rec, cambio, metodo_pago: metodo, empleado_nombre, empleado_uid
+    articulos, total, recibido: rec, cambio, metodo_pago: metodo, empleado_nombre, empleado_uid,
+    // Llave de esta venta, hecha en el aparato ANTES de mandarla. Si el
+    // servidor la guarda y la señal se cae justo antes de que llegue la
+    // confirmación, la app cree que falló, la encola y la vuelve a subir.
+    // Con esta llave (única en la base) el segundo intento choca y se
+    // descarta, en vez de cobrarle dos veces al mismo cliente.
+    clave_cliente: claveDeVenta(),
   };
 
   const restaurar = botonCargando(btn, 'Guardando venta…');
