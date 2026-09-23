@@ -975,17 +975,25 @@ const SB_KEY = 'sb_publishable_aYIjta_ejZC96RLuqE2Q_w_871ORE3S';
 const sb = supabase.createClient(SB_URL, SB_KEY);
 
 /* Estado global */
-let ESTADO = {
-  usuario: null,
-  negocio: null,       // {id, nombre, logo_url, color, plan}
-  rol: 'admin',        // 'admin' (dueño y a quien él ascienda) | 'empleado'
-  miNombre: '',        // con qué nombre se firman las ventas de esta cuenta
-  productos: [],       // [{id, nombre, precio, foto_url, orden}]
-  empleados: [],        // [{id, nombre, email, rol, usuario_id}] — cuentas del negocio
-  carro: {},           // {producto_id: cantidad}
-  recibido: 0,
-  ultimaVenta: null,
-};
+/* El estado arranca de aquí, y al cerrar sesión se vuelve a pedir de aquí
+   mismo. Antes el logout rearmaba el objeto a mano y se le olvidaba el rol,
+   así que quedaba en undefined: quien se registraba después en esa misma
+   pestaña creaba su negocio pero entraba con cara de empleado, sin permisos
+   para nada, hasta que recargaba la página. */
+function estadoInicial(){
+  return {
+    usuario: null,
+    negocio: null,       // {id, nombre, logo_url, color, plan}
+    rol: 'admin',        // 'admin' (dueño y a quien él ascienda) | 'empleado'
+    miNombre: '',        // con qué nombre se firman las ventas de esta cuenta
+    productos: [],       // [{id, nombre, precio, foto_url, orden}]
+    empleados: [],       // [{id, nombre, email, rol, usuario_id}] — cuentas del negocio
+    carro: {},           // {producto_id: cantidad}
+    recibido: 0,
+    ultimaVenta: null,
+  };
+}
+let ESTADO = estadoInicial();
 
 /* ---------- temas de color ---------- */
 const TEMAS = {
@@ -1200,7 +1208,7 @@ async function uiLogin(){
 async function uiLogout(){
   mostrarCarga('Saliendo…');
   await sb.auth.signOut();
-  ESTADO = { usuario:null, negocio:null, productos:[], empleados:[], carro:{}, recibido:0, ultimaVenta:null };
+  ESTADO = estadoInicial();
   ocultarCarga();
   verModo('login');
   verPantalla('p-auth');
@@ -1228,6 +1236,10 @@ async function uiCrearNegocio(){
       .insert([{ dueno: ESTADO.usuario.id, nombre }]).select();
     if(error) throw error;
     ESTADO.negocio = data[0];
+    // quien crea el negocio es su dueño: manda. No se deja al valor que
+    // trajera el estado, que podía venir de la sesión anterior.
+    ESTADO.rol = 'admin';
+    ESTADO.miNombre = (ESTADO.usuario.email || '').split('@')[0] || 'Administrador';
     // sembrar productos de ejemplo para que no arranque vacío
     await sembrarEjemplo();
     await cargarDatos();
