@@ -566,7 +566,10 @@
 <!-- ticket para el diálogo de impresión del navegador: solo se ve al imprimir -->
 <pre id="ticket-print" aria-hidden="true"></pre>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Supabase se sirve desde este mismo dominio, no desde un CDN: así el
+     navegador solo ejecuta el archivo que está en este repo, con su commit
+     y su revisión. Ver vendor/README.md para actualizarla. -->
+<script src="vendor/supabase-js-2.117.2.js"></script>
 <script>/** @license
  *
  * jsPDF - PDF Document creation from JavaScript

@@ -9,6 +9,7 @@ de compilación ni configuración: solo Node y Playwright.
 ```bash
 node pruebas/correr.js            # todas
 node pruebas/correr.js seguridad  # solo las que traigan "seguridad" en el nombre
+node pruebas/humo.js              # la app REAL, con la CSP puesta
 ```
 
 Termina en 0 si todo pasó y en 1 si algo falló, así que sirve tal cual para
@@ -46,6 +47,20 @@ reglas que ya no existen.
 | `05-fechas` | Que el día corte a medianoche local y no a las 6 de la tarde |
 | `06-cuentas` | Registro, roles, invitaciones, primer login |
 | `07-limites` | Doble toque, respuesta perdida, carrito vacío, centavos |
+
+## La prueba de humo
+
+`humo.js` va aparte y hace lo único que la suite normal no puede: carga la
+app **de verdad**, con la librería real de Supabase y con las cabeceras de
+`_headers` puestas (la CSP incluida). La suite normal usa un Supabase falso
+y por eso bloquea la librería.
+
+Es la que atrapa que el `<script>` apunte a un archivo que no existe, o que
+la CSP esté bloqueando algo que la app necesita. Sin ella se podía dejar la
+app muerta con las 46 pruebas en verde.
+
+Córrela siempre que toques `_headers`, el `<script>` de la librería o
+`vendor/`.
 
 ## Lo que estas pruebas NO cubren
 

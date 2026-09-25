@@ -53,7 +53,12 @@ function servir(){
 
     for(const [nombre, caso] of Object.entries(modulo.casos)){
       // contexto nuevo por caso: el localStorage no se contagia entre pruebas
-      let ctx = await navegador.newContext({ viewport:{width:420,height:950} });
+      // Se bloquea el service worker: si no, al abrir una segunda página la
+      // controla el de la primera, y SUS peticiones no pasan por la
+      // intercepción de Playwright — traería la librería real de Supabase y
+      // pisaría el falso. La app funciona igual sin él; lo que estas pruebas
+      // llaman "sin internet" lo maneja el falso, no el service worker.
+      let ctx = await navegador.newContext({ viewport:{width:420,height:950}, serviceWorkers: 'block' });
       const errores = [];
       const ayuda = {
         afirmar, CUENTAS, escenario,
@@ -63,10 +68,20 @@ function servir(){
           if(opciones.zona && !ctx.__zona){
             const guardado = await ctx.storageState();
             await ctx.close();
-            ctx = await navegador.newContext({ viewport:{width:420,height:950}, timezoneId: opciones.zona, storageState: guardado });
+            ctx = await navegador.newContext({ viewport:{width:420,height:950}, timezoneId: opciones.zona, storageState: guardado, serviceWorkers: 'block' });
             ctx.__zona = opciones.zona;
           }
           const page = await ctx.newPage();
+          // La librería de verdad de Supabase pisaría el falso al cargar
+          // (ambos se llaman window.supabase). Se bloquea para que las
+          // pruebas hablen siempre con el falso, que es el que aplica las
+          // reglas del servidor.
+          // Se responde vacío en vez de abortar: el service worker de la app
+          // intercepta lo de este dominio y, ante un error de red, contesta
+          // con index.html — el navegador acabaría ejecutando HTML como
+          // JavaScript y la prueba fallaría por una razón que no es la suya.
+          await page.route('**/vendor/supabase-js-*.js',
+            r => r.fulfill({ status: 200, contentType: 'text/javascript', body: '/* falso en pruebas */' }));
           if(opciones.reloj) await page.clock.install({ time: new Date(opciones.reloj) });
           page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message));
           page.on('dialog', d => d.accept());
